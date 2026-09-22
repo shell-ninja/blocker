@@ -158,7 +158,7 @@ bool ensure_binary() {
         std::string tmp = b + ".restore";
         fs::copy_file("/proc/self/exe", tmp, fs::copy_options::overwrite_existing, ec);
         if (ec) return false;
-        chmod(tmp.c_str(), 0755);
+        chmod(tmp.c_str(), 0700);  // root-only, consistent with the initial install
         if (rename(tmp.c_str(), b.c_str()) != 0) return false;
         set_immutable(b, true);
         return true;
@@ -379,6 +379,9 @@ void arm(const Config& cfg) {
 
 void maintain_fast(const Config& cfg, unsigned processed) {
     if (!active()) return;
+    // NOTE: unlocked_since is only safe as a static local because maintain_fast is
+    // called exclusively from the single-threaded daemon main loop. If concurrency is
+    // ever introduced here, move this into a class member and protect with a mutex.
     static uint64_t unlocked_since[2] = {0, 0};
     ensure_binary();
     ensure_units();

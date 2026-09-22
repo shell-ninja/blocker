@@ -77,6 +77,16 @@ void Sha256::final(uint8_t out[32]) {
         out[4 * i] = uint8_t(h_[i] >> 24); out[4 * i + 1] = uint8_t(h_[i] >> 16);
         out[4 * i + 2] = uint8_t(h_[i] >> 8); out[4 * i + 3] = uint8_t(h_[i]);
     }
+    reset();  // guard against accidental reuse: leave the object in a valid initial state
+}
+
+void Sha256::reset() {
+    static const uint32_t init[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                                     0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+    memcpy(h_, init, sizeof h_);
+    memset(buf_, 0, sizeof buf_);
+    buflen_ = 0;
+    total_ = 0;
 }
 
 void sha256(const void* data, size_t len, uint8_t out[32]) {

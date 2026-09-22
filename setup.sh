@@ -82,17 +82,19 @@ run_with_spinner() {
     printf " ${C_CYAN}│${C_RESET}  ${C_MUTED}+ %s${C_RESET}\n" "$*"
     return 0
   fi
-  "$@" > /tmp/blocker_setup_cmd.log 2>&1 &
+  local logfile
+  logfile=$(mktemp /tmp/blocker_setup_cmd.XXXXXX)
+  "$@" > "$logfile" 2>&1 &
   local pid=$!
   spin "$pid" "$msg"
   if wait "$pid"; then
     status_ok "$msg"
-    rm -f /tmp/blocker_setup_cmd.log
+    rm -f "$logfile"
   else
     status_fail "$msg (failed)"
-    if [ -f /tmp/blocker_setup_cmd.log ]; then
-      printf "${C_RED}%s${C_RESET}\n" "$(cat /tmp/blocker_setup_cmd.log)" >&2
-      rm -f /tmp/blocker_setup_cmd.log
+    if [ -f "$logfile" ]; then
+      printf "${C_RED}%s${C_RESET}\n" "$(cat "$logfile")" >&2
+      rm -f "$logfile"
     fi
     die "command failed: $*"
   fi
@@ -280,14 +282,14 @@ if [ "$UPGRADE" = 1 ]; then
   if [ "$DRY" = 0 ]; then
     for _ in $(seq 1 20); do systemctl is-active --quiet blocker.service 2>/dev/null || break; sleep 1; done
   fi
-  run_with_spinner "Installing updated binaries and systemd units" run as_root ./build/blocker install ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}
+  run_with_spinner "Installing updated binaries and systemd units" run as_root ./build/blocker install -- ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}
   if [ "$DRY" = 0 ]; then
     for _ in $(seq 1 20); do as_root /usr/local/sbin/blocker status >/dev/null 2>&1 && break; sleep 1; done
   fi
   run_with_spinner "Merging updated base block rules" run as_root /usr/local/sbin/blocker add --defaults
 else
   say "Deploying blocker service, systemd watchers and network defenses..."
-  run as_root ./build/blocker install ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}
+  run as_root ./build/blocker install -- ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}
 fi
 
 
@@ -327,7 +329,7 @@ else
   fi
 fi
 
-sleep 1 && clear
+sleep 1
 
 # ------------------------------------------------------------------ Completion Card
 printf "\n"

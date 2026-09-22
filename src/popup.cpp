@@ -77,8 +77,16 @@ bool uid_of_udp_port(uint16_t port, uid_t& uid) {
             if (tok.size() < 8) continue;
             size_t colon = tok[1].rfind(':');
             if (colon == std::string::npos) continue;
-            if (strtoul(tok[1].c_str() + colon + 1, nullptr, 16) != port) continue;
-            uid = static_cast<uid_t>(strtoul(tok[7].c_str(), nullptr, 10));
+            const char* port_str = tok[1].c_str() + colon + 1;
+            char* port_end = nullptr;
+            errno = 0;
+            unsigned long port_val = strtoul(port_str, &port_end, 16);
+            if (errno || port_end == port_str || port_val != port) continue;
+            char* uid_end = nullptr;
+            errno = 0;
+            unsigned long uid_val = strtoul(tok[7].c_str(), &uid_end, 10);
+            if (errno || uid_end == tok[7].c_str()) continue;
+            uid = static_cast<uid_t>(uid_val);
             return true;
         }
     }

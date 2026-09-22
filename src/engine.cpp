@@ -423,6 +423,8 @@ void Server::tcp_conn(int fd) {
         if (!recv_all(fd, buf.data(), n)) break;
         std::vector<uint8_t> reply = eng_.handle(buf.data(), n, true);
         if (reply.empty()) break;
+        // TCP DNS frames use a 16-bit length prefix — reject oversized replies
+        if (reply.size() > 65535) break;
         hdr[0] = uint8_t(reply.size() >> 8);
         hdr[1] = uint8_t(reply.size());
         if (!send_all(fd, hdr, 2) || !send_all(fd, reply.data(), reply.size())) break;

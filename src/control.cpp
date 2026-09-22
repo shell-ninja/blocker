@@ -196,7 +196,7 @@ bool ControlServer::start(std::string& err) {
     sockaddr_un addr{};
     addr.sun_family = AF_UNIX;
     if (path.size() >= sizeof addr.sun_path) { err = "socket path too long: " + path; return false; }
-    strcpy(addr.sun_path, path.c_str());
+    snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path.c_str());
     unlink(path.c_str());
     fd_ = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd_ < 0) { err = std::string("socket: ") + strerror(errno); return false; }
@@ -217,7 +217,7 @@ bool control_call(const std::string& header, const std::string& body, Reply& out
     sockaddr_un addr{};
     addr.sun_family = AF_UNIX;
     if (path.size() >= sizeof addr.sun_path) { err = "socket path too long"; return false; }
-    strcpy(addr.sun_path, path.c_str());
+    snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path.c_str());
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) { err = strerror(errno); return false; }
     if (connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof addr) != 0) {

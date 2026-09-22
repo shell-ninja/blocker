@@ -38,9 +38,10 @@ build/blocker: $(SRC) $(HDR)
 	$(CXX) $(STD) $(CXXFLAGS) $(WARN) $(HARDEN) $(SRC) -o $@ $(LDFLAGS) $(LDHARDEN) $(LIBS)
 
 # Fully static binary (handy for copying to another machine): make static
+# Note: -fPIE/-pie are valid with static binaries on glibc; musl-libc requires no special flag.
 static: $(SRC) $(HDR)
 	@mkdir -p build
-	$(CXX) $(STD) $(CXXFLAGS) $(WARN) $(SRC) -o build/blocker $(LDFLAGS) -static $(LIBS)
+	$(CXX) $(STD) $(CXXFLAGS) $(WARN) $(HARDEN) $(SRC) -o build/blocker $(LDFLAGS) -static -Wl,-z,relro $(LIBS)
 
 clean:
 	rm -rf build gen

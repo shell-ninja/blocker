@@ -208,6 +208,9 @@ std::vector<uint8_t> reply_cname(const uint8_t* pkt, const Query& q, const std::
     size_t target_off = r.size();
     r.insert(r.end(), enc.begin(), enc.end());
     for (const Addr& a : addrs) {
+        // DNS compression pointers are 14-bit (max 0x3FFF). If the packet grew beyond
+        // that (theoretically only possible with an enormous query section), bail safely.
+        if (target_off > 0x3FFF) return reply_rcode(pkt, q, RC_SERVFAIL);
         put16(r, uint16_t(0xC000 | target_off));  // owner = the CNAME target name written above
         put16(r, a.type);
         put16(r, 1);

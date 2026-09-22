@@ -7,6 +7,7 @@
 #include <cstring>
 #include <ctime>
 #include <fcntl.h>
+#include <atomic>
 #include <mutex>
 #include <sys/random.h>
 #include <sys/stat.h>
@@ -93,11 +94,14 @@ std::string join(const std::vector<std::string>& v, const std::string& sep) {
 }
 
 bool parse_u64(std::string_view s, uint64_t& out) {
-    if (s.empty() || s.size() > 19) return false;
+    if (s.empty() || s.size() > 20) return false;
     uint64_t v = 0;
     for (char c : s) {
         if (c < '0' || c > '9') return false;
-        v = v * 10 + static_cast<uint64_t>(c - '0');
+        uint64_t digit = static_cast<uint64_t>(c - '0');
+        // Guard against overflow: v * 10 + digit > UINT64_MAX
+        if (v > (UINT64_MAX - digit) / 10) return false;
+        v = v * 10 + digit;
     }
     out = v;
     return true;
@@ -209,9 +213,9 @@ bool read_file(const std::string& path, std::string& out, size_t max_bytes) {
 }
 
 bool write_file_atomic(const std::string& path, const std::string& data, mode_t mode) {
-    static std::mutex m;  // the temp name is per-process, so serialise writers
-    std::lock_guard<std::mutex> g(m);
-    std::string tmp = path + ".tmp." + std::to_string(getpid());
+    // PID + atomic counter gives a unique name per call; no global mutex needed.
+    static std::atomic<uint64_t> seq{0};
+    std::string tmp = path + ".tmp." + std::to_string(getpid()) + "." + std::to_string(seq++);
     int fd = open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, mode);
     if (fd < 0) return false;
     size_t off = 0;
@@ -289,6 +293,7 @@ int run_cmd(const std::vector<std::string>& argv, const std::string* stdin_data,
         dup2(stdin_data ? inp[0] : devnull, 0);
         dup2(stdout_data ? outp[1] : devnull, 1);
         dup2(devnull, 2);
+        if (devnull > 2) close(devnull);  // don't leak /dev/null fd into the child
         execvp(args[0], args.data());
         _exit(127);
     }

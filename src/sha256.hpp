@@ -12,6 +12,7 @@ public:
     Sha256();
     void update(const void* data, size_t len);
     void final(uint8_t out[32]);
+    void reset();  // restores to initial state; called automatically by final()
 
 private:
     void compress(const uint8_t* block);

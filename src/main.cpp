@@ -85,7 +85,10 @@ static bool require_root() {
 }
 
 static std::string random_password() {
-    static const char* alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";  // no 0/O/1/I
+    // 32 characters: & 31 gives a perfectly uniform, in-bounds index (2^5 = 32).
+    // No 0/O/1/I to avoid visual confusion.
+    static const char alphabet[33] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    static_assert(sizeof(alphabet) - 1 == 32, "alphabet must have exactly 32 characters");
     uint8_t b[24];
     random_bytes(b, sizeof b);
     std::string p;
