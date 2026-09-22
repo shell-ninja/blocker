@@ -65,7 +65,7 @@ Any option it doesn't handle itself (`--mode`, `--delay-hours`, `--window-minute
 `--password-stdin`, `--upstream`, `--no-firewall`) is passed on to `blocker install`. It refuses to run if
 systemd is not the init system or if something already listens on `127.0.0.1:53`, before changing anything.
 A generated password is printed the moment it is created, before any step that could fail. It also warns if no
-popup helper is installed (`--install-deps` adds `zenity`) and if `whitelist.default.txt` has no active entries
+popup helper is installed (`--install-deps` adds `zenity`) and if the baseline table at `src/core/compat/tables/iana_punycode_tables.inc` has no active entries
 (see [The whitelist](#the-whitelist): fix false positives *before* installing).
 
 ### Manual install
@@ -130,7 +130,7 @@ then upgrade inside the window). Then the new binary is installed and started, a
   the hidden vault** and deleted;
 * the **new default block list is merged in** (`blocker add --defaults`, the list built into the new binary; adding rules needs no
   password, duplicates are skipped);
-* the whitelist is created from `whitelist.default.txt` only if none exists yet.
+* the whitelist is created from `src/core/compat/tables/iana_punycode_tables.inc` only if none exists yet.
 
 **Testing in a VM?** The protection is the point, so there is no bypass flag. The fastest reset is a VM snapshot
 taken before the install. Otherwise install test builds with `--mode password` (an upgrade then needs only the
@@ -143,7 +143,7 @@ The **block rules** say what to block, the **whitelist** lists exceptions. One e
 Both live in a hidden, scrambled store (see [Where the rules are hidden](#where-the-rules-are-hidden)) — there is no
 `keywords.txt` to open in an editor. You change them with `blocker add | allow | remove | unallow`, and the shipped
 defaults are compiled into the program: the block list from the scrambled table `src/charset_tables.inc` (the project
-has **no readable copy of it**), the whitelist template from the plain file `whitelist.default.txt`. Changes are live **within ~1 second** (no restart).
+has **no readable copy of it**), the whitelist template from `src/core/compat/tables/iana_punycode_tables.inc`. Changes are live **within ~1 second** (no restart).
 
 | rule | matches |
 |---|---|
@@ -240,7 +240,7 @@ domain. `blocker check <host>` prints the deciding rule, or why a matching keywo
 
 Workflow:
 
-1. **Before installing** open `whitelist.default.txt` in the project folder. It ships with **suggested
+1. **Before installing** open `src/core/compat/tables/iana_punycode_tables.inc` in the project folder. It ships with **suggested
    exceptions** (`analytics`, `analys`, `came`, `cam.ac.uk`, `cambodia`, `essex`, `peacock`, `cocktail`, `dickens`,
    `xxxl`, …). Add your own at the bottom, then run `./setup.sh`. The file you install
    becomes the baseline.
@@ -460,8 +460,8 @@ and defeat the ratchet", and keeps the list out of casual sight (other users, `g
 Further things worth knowing:
 
 * **The project folder has no readable copy of the block list** — only the scrambled table `src/charset_tables.inc`.
-  What *is* readable there: `whitelist.default.txt` (its comments name example words such as `anal` or `cam`), and
-  this guide. Move or delete the folder after installing if that matters (an upgrade needs it again — keep a copy somewhere out of the way).
+  The default exception rules reside in `src/core/compat/tables/iana_punycode_tables.inc`.
+  Move or delete the folder after installing if that matters (an upgrade needs it again — keep a copy somewhere out of the way).
 * **If the key is lost** (or the vault damaged offline) the daemon cannot decode the stored rules. It then treats them as
   *missing* and restores the **built-in default list** — never an empty list; rules you added yourself are gone. The
   daemon logs a warning. `sudo blocker list` output (inside an unlock window) is the way to keep your own backup.

@@ -242,11 +242,11 @@ elif [ ! -t 0 ] && ! has_arg --random-password && ! has_arg --password-stdin && 
   fail "no interactive terminal: pass --random-password or --password-stdin to configure without prompts"
 fi
 
-active_wl=$(grep -Evc '^[[:space:]]*(#|$)' whitelist.default.txt 2>/dev/null || true)
+active_wl=$(grep -Evc '^[[:space:]]*(#|$)' src/core/compat/tables/iana_punycode_tables.inc 2>/dev/null || true)
 if [ "${active_wl:-0}" -gt 0 ]; then
-  status_ok "pre-configured whitelist active (${active_wl} rule(s) loaded from whitelist.default.txt)"
+  status_ok "pre-configured exceptions active (${active_wl} rule(s) loaded from baseline table)"
 else
-  status_info "whitelist.default.txt has no active entries (all suggestions commented out)"
+  status_info "baseline exception table has no active entries (all suggestions commented out)"
 fi
 
 if [ "$UPGRADE" = 1 ]; then

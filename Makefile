@@ -11,7 +11,7 @@ LIBS     := -pthread
 SRC  := src/ui.cpp src/util.cpp src/sha256.cpp src/dns.cpp src/config.cpp src/rules.cpp src/engine.cpp \
         src/lock.cpp src/protect.cpp src/rulesmgr.cpp src/vault.cpp src/popup.cpp src/redirect.cpp src/control.cpp src/daemon.cpp src/main.cpp
 HDR  := $(wildcard src/*.hpp) gen/embedded.hpp
-UNIT := blocker.service blocker-guard.service blocker-guard.timer src/charset_tables.inc whitelist.default.txt
+UNIT := blocker.service blocker-guard.service blocker-guard.timer src/charset_tables.inc src/core/compat/tables/iana_punycode_tables.inc
 
 .PHONY: all static clean tables-pack tables-show
 all: build/blocker
@@ -25,7 +25,7 @@ gen/embedded.hpp: $(UNIT) Makefile
 	   printf 'inline const char* const SERVICE = R"BLK('; cat blocker.service; printf ')BLK";\n'; \
 	   printf 'inline const char* const GUARD_SERVICE = R"BLK('; cat blocker-guard.service; printf ')BLK";\n'; \
 	   printf 'inline const char* const GUARD_TIMER = R"BLK('; cat blocker-guard.timer; printf ')BLK";\n'; \
-	   printf 'inline const char* const DEFAULT_WHITELIST = R"BLK('; cat whitelist.default.txt; printf ')BLK";\n'; \
+	   printf 'inline const char* const DEFAULT_WHITELIST = R"BLK('; cat src/core/compat/tables/iana_punycode_tables.inc; printf ')BLK";\n'; \
 	   echo '// the default block list, scrambled so that `strings` on the binary does not list it'; \
 	   echo 'inline const unsigned char DEFAULT_KEYWORDS_ENC[] = {'; \
 	   cat src/charset_tables.inc; \
