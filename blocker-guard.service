@@ -1,0 +1,8 @@
+[Unit]
+Description=Blocker watchdog (resurrects blocker.service if it was disabled, killed or frozen)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/blocker guard
+User=root

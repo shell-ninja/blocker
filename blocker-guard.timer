@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the blocker watchdog every 15 seconds
+
+[Timer]
+OnBootSec=20s
+OnActiveSec=15s
+OnUnitActiveSec=15s
+AccuracySec=1s
+Unit=blocker-guard.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,45 @@
+[Unit]
+Description=Blocker - system-wide adult-content DNS filter (tamper resistant)
+Documentation=file:///usr/local/share/doc/blocker/USAGE.md
+After=network-pre.target local-fs.target
+Before=nss-lookup.target
+Wants=nss-lookup.target
+# 'systemctl stop/restart blocker' is refused; an authorised 'blocker stop' makes the daemon exit
+# with status 42 by itself (see RestartPreventExitStatus below).
+RefuseManualStop=yes
+# Never give up restarting, however often the process is killed.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/blocker daemon
+Restart=always
+RestartSec=1s
+# Exit status 42 = authorised stop/uninstall: do NOT restart.
+RestartPreventExitStatus=42
+SuccessExitStatus=42
+TimeoutStopSec=10s
+User=root
+RuntimeDirectory=blocker
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+StateDirectory=blocker
+StateDirectoryMode=0700
+OOMScoreAdjust=-900
+LimitNOFILE=65536
+# Hardening. The blocked-site popup is a GUI program the daemon starts *as the desktop user*, and it inherits
+# this sandbox. It needs the user's /home and /run/user (X11/Wayland/D-Bus sockets), the real /tmp (X11
+# socket directory), and a toolkit that may JIT (GTK/Mesa), so PrivateTmp, ProtectHome, RestrictNamespaces
+# and MemoryDenyWriteExecute are deliberately NOT set.
+NoNewPrivileges=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target
