@@ -67,6 +67,8 @@ std::string redirect_config_block(bool redirect, const std::string& url = "");
 // Returns true if the text changed; human-readable notes about what was done go to `notes`.
 bool upgrade_config_text(std::string& text, bool popup, const std::string& popup_message, bool redirect,
                          const std::string& redirect_url, std::vector<std::string>& notes);
+// Updates or inserts a key = value line in existing config text. Returns true if modified.
+bool set_config_value(std::string& text, const std::string& key, const std::string& val);
 // The popup settings block; also appended to a config written by a version that had no popup support.
 std::string popup_config_block(bool popup, const std::string& popup_message = "");
 std::string default_config_text(LockMode mode, uint64_t delay_secs, uint64_t window_secs,

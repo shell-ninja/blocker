@@ -27,6 +27,7 @@ void disarm(const Config& cfg, bool uninstall);                // lift protectio
 
 bool ensure_units();  // (re)write missing/altered unit files; true if anything changed
 bool ensure_binary(); // restore /usr/local/sbin/blocker from the running image if it vanished
+int sysctl(std::initializer_list<const char*> args);
 int sysctl(const std::vector<std::string>& args);  // systemctl wrapper (no-op returning -1 when inactive)
 std::string report(const Config& cfg);             // multi-line human summary for `blocker status`
 

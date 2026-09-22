@@ -181,7 +181,7 @@ pid_t spawn_as(uid_t uid, const std::vector<std::pair<std::string, std::string>>
     setsid();
     signal(SIGPIPE, SIG_DFL);
     int dn = open("/dev/null", O_RDWR);
-    if (dn >= 0) { dup2(dn, 0); dup2(dn, 1); dup2(dn, 2); }
+    if (dn >= 0) { dup2(dn, 0); dup2(dn, 1); dup2(dn, 2); if (dn > 2) close(dn); }
 #ifdef SYS_close_range
     if (syscall(SYS_close_range, 3u, ~0u, 0u) != 0)
 #endif

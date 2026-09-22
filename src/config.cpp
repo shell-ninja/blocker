@@ -240,6 +240,34 @@ bool upgrade_config_text(std::string& text, bool popup, const std::string& popup
     return changed;
 }
 
+bool set_config_value(std::string& text, const std::string& key, const std::string& val) {
+    std::vector<std::string> lines = split(text, '\n');
+    bool found = false;
+    std::string lower_key = to_lower(trim(key));
+    for (std::string& line : lines) {
+        std::string trimmed = trim(line);
+        if (trimmed.empty() || trimmed[0] == '#') continue;
+        size_t eq = trimmed.find('=');
+        if (eq != std::string::npos) {
+            std::string k = to_lower(trim(trimmed.substr(0, eq)));
+            if (k == lower_key) {
+                line = key + " = " + val;
+                found = true;
+                break;
+            }
+        }
+    }
+    if (!found) {
+        if (!lines.empty() && !lines.back().empty()) lines.push_back("");
+        lines.push_back(key + " = " + val);
+    }
+    std::string out = join(lines, "\n");
+    if (!out.empty() && out.back() != '\n') out.push_back('\n');
+    bool changed = (out != text);
+    text = std::move(out);
+    return changed;
+}
+
 std::string popup_config_block(bool popup, const std::string& popup_message) {
     std::string t;
     t += "# Desktop popup shown to the user when a blocked site is visited. \"\\n\" = new line, {host} = the blocked\n";

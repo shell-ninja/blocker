@@ -140,6 +140,13 @@ bool write_protected(const std::string& path, const std::string& data, mode_t mo
     return true;
 }
 
+int sysctl(std::initializer_list<const char*> args) {
+    if (!active() || !systemd_present()) return -1;
+    std::vector<std::string> a = {"systemctl"};
+    for (const char* arg : args) a.emplace_back(arg);
+    return run_cmd(a);
+}
+
 int sysctl(const std::vector<std::string>& args) {
     if (!active() || !systemd_present()) return -1;
     std::vector<std::string> a = {"systemctl"};

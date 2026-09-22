@@ -11,7 +11,7 @@
 #
 # Options handled here:   -y/--yes  --build-only  --install-deps  --upgrade  --dry-run  -h/--help
 # Everything else is passed to `blocker install` (--mode, --delay-hours, --window-minutes, --redirect-url URL,
-# --no-redirect, --popup, --popup-message TEXT,
+# --no-redirect, --popup, --popup-message TEXT, ( not available for now )
 # --random-password, --password-stdin, --upstream, --no-firewall).
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
@@ -289,7 +289,7 @@ if [ "$UPGRADE" = 1 ]; then
   run_with_spinner "Merging updated base block rules" run as_root /usr/local/sbin/blocker add --defaults
 else
   say "Deploying blocker service, systemd watchers and network defenses..."
-  run as_root ./build/blocker install -- ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}
+  run as_root ./build/blocker install ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}
 fi
 
 

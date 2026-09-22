@@ -140,6 +140,7 @@ static int cmd_install(const std::vector<std::string>& args) {
     LockMode mode = LockMode::Both;
     uint64_t delay_h = 24, window_m = 30;
     bool random_pw = false, pw_stdin = false, firewall = true, popup = false, redirect = true;
+    bool popup_set = false, popup_msg_set = false, redirect_set = false, redirect_url_set = false;
     std::string popup_message, redirect_url;
     std::string upstream = "1.1.1.3, 1.0.0.3";
     for (size_t i = 0; i < args.size(); ++i) {
@@ -153,15 +154,16 @@ static int cmd_install(const std::vector<std::string>& args) {
         else if (a == "--random-password") random_pw = true;
         else if (a == "--password-stdin") pw_stdin = true;
         else if (a == "--no-firewall") firewall = false;
-        else if (a == "--no-popup") popup = false;
-        else if (a == "--popup") popup = true;
-        else if (a == "--no-redirect") redirect = false;
+        else if (a == "--no-popup") { popup = false; popup_set = true; }
+        else if (a == "--popup") { popup = true; popup_set = true; }
+        else if (a == "--no-redirect") { redirect = false; redirect_set = true; }
         else if (a == "--redirect-url" && next(v)) {
             if (!valid_redirect_url(v)) {
                 std::fprintf(stderr, "blocker: --redirect-url must be an http:// or https:// URL without spaces or quotes\n");
                 return 2;
             }
             redirect_url = v;
+            redirect_url_set = true;
         }
         else if (a == "--popup-message" && next(v)) {
             if (v.empty() || v.size() > 600 || v.find('#') != std::string::npos) {
@@ -170,6 +172,8 @@ static int cmd_install(const std::vector<std::string>& args) {
             }
             for (size_t p; (p = v.find('\n')) != std::string::npos;) v.replace(p, 1, "\\n");  // newline -> the two characters \n
             popup_message = v;
+            popup_msg_set = true;
+            if (!popup_set) popup = true;  // Passing a custom message implies popup should be enabled
         }
         else { std::fprintf(stderr, "blocker: unknown or incomplete option '%s'\n", a.c_str()); return 2; }
     }
@@ -204,15 +208,28 @@ static int cmd_install(const std::vector<std::string>& args) {
         std::string cur;
         read_file(paths::conf(), cur);
         std::vector<std::string> notes;
-        if (!upgrade_config_text(cur, popup, popup_message, redirect, redirect_url, notes)) {
+        bool upgraded = upgrade_config_text(cur, popup, popup_message, redirect, redirect_url, notes);
+        if (popup_set || popup_msg_set) {
+            set_config_value(cur, "popup", popup ? "yes" : "no");
+            if (popup_msg_set) set_config_value(cur, "popup_message", popup_message);
+            notes.push_back(std::string("updated popup settings (popup = ") + (popup ? "yes" : "no") + ")");
+            upgraded = true;
+        }
+        if (redirect_set || redirect_url_set) {
+            if (redirect_set) set_config_value(cur, "redirect", redirect ? "yes" : "no");
+            if (redirect_url_set) set_config_value(cur, "redirect_url", redirect_url);
+            notes.push_back(std::string("updated redirect settings (redirect = ") + (redirect ? "yes" : "no") + ")");
+            upgraded = true;
+        }
+        if (!upgraded) {
             std::printf("keeping existing %s\n", paths::conf().c_str());
-        } else {  // upgrade from a version that lacked the redirect and/or the popup settings
+        } else {
             if (!write_file_atomic(paths::conf(), cur, 0600)) {
                 std::fprintf(stderr, "blocker: cannot update %s\n", paths::conf().c_str());
                 return 1;
             }
-            std::printf("keeping existing %s\n", paths::conf().c_str());
-            for (const std::string& n : notes) std::printf("  config upgrade: %s\n", n.c_str());
+            std::printf("updated %s\n", paths::conf().c_str());
+            for (const std::string& n : notes) std::printf("  config: %s\n", n.c_str());
         }
     }
     chmod(paths::conf().c_str(), 0600);  // settings (lock mode, delays, landing page) are private too
