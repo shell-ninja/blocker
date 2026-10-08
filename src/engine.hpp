@@ -47,8 +47,8 @@ private:
 // Built-in, non-removable block list of DoH/DoT providers (used when block_doh = yes).
 const std::vector<std::string>& builtin_bypass_domains();
 
-// Returns the host a name must be CNAME'd to for SafeSearch/Restricted Mode, or nullptr.
-const char* safesearch_target(const std::string& host, bool search, bool youtube);
+// Returns the host a name must be CNAME'd to for SafeSearch, or nullptr.
+const char* safesearch_target(const std::string& host, bool search);
 
 class Popup;
 class Redirector;

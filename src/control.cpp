@@ -83,8 +83,8 @@ Reply ControlServer::handle(const std::string& req, int& exit_code) {
         if (host.empty()) return fail("usage: check <hostname>");
         Verdict v = c_.engine->rules()->check(host);
         if (v.blocked) return okay("BLOCKED (" + v.reason + ")");
-        if (const char* t = safesearch_target(host, c_.cfg.safesearch, c_.cfg.youtube_restrict))
-            return okay(std::string("allowed, but rewritten to ") + t + " (SafeSearch/Restricted Mode)");
+        if (const char* t = safesearch_target(host, c_.cfg.safesearch))
+            return okay(std::string("allowed, but rewritten to ") + t + " (SafeSearch)");
         return okay(v.reason.empty() ? "allowed" : "allowed (" + v.reason + ")");
     }
 

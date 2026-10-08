@@ -321,7 +321,6 @@ static std::string policy_json(bool firefox, const Config& cfg) {
         return "{\n  \"blocker-managed\": true,\n  \"policies\": {\n    \"DNSOverHTTPS\": { \"Enabled\": false, \"Locked\": true }\n  }\n}\n";
     std::string j = "{\n  \"DnsOverHttpsMode\": \"off\",\n  \"BuiltInDnsClientEnabled\": false";
     if (cfg.safesearch) j += ",\n  \"ForceGoogleSafeSearch\": true";
-    if (cfg.youtube_restrict) j += ",\n  \"ForceYouTubeRestrict\": 2";
     return j + "\n}\n";
 }
 

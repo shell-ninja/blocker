@@ -29,7 +29,6 @@ struct Config {
     size_t cache_entries = 16384;
     uint32_t cache_max_ttl = 300;
     bool safesearch = true;         // force SafeSearch on Google/Bing/DuckDuckGo/Pixabay
-    bool youtube_restrict = true;   // force YouTube Restricted Mode
     bool block_doh = true;          // sinkhole well-known DoH/DoT provider names + Firefox canary
     bool firewall = true;           // nftables: only root (the daemon) may send plain DNS/DoT off-box
     bool browser_policies = true;   // managed policies: disable browser DoH, force SafeSearch

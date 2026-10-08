@@ -89,17 +89,12 @@ bool is_google_search_host(std::string_view h) {
 }
 }  // namespace
 
-const char* safesearch_target(const std::string& h, bool search, bool youtube) {
+const char* safesearch_target(const std::string& h, bool search) {
     if (search) {
         if (is_google_search_host(h)) return "forcesafesearch.google.com";
         if (h == "bing.com" || h == "www.bing.com") return "strict.bing.com";
         if (h == "duckduckgo.com" || h == "www.duckduckgo.com" || h == "start.duckduckgo.com") return "safe.duckduckgo.com";
         if (h == "pixabay.com" || h == "www.pixabay.com") return "safesearch.pixabay.com";
-    }
-    if (youtube) {
-        if (h == "www.youtube.com" || h == "m.youtube.com" || h == "youtube.com" || h == "youtubei.googleapis.com" ||
-            h == "youtube.googleapis.com" || h == "www.youtube-nocookie.com")
-            return "restrict.youtube.com";
     }
     return nullptr;
 }
@@ -311,8 +306,8 @@ std::vector<uint8_t> Engine::resolve(const uint8_t* pkt, size_t len, const dns::
             }
             return reply_sinkhole(pkt, q, 60);
         }
-        if (cfg_.safesearch || cfg_.youtube_restrict) {
-            if (const char* target = safesearch_target(q.name, cfg_.safesearch, cfg_.youtube_restrict)) {
+        if (cfg_.safesearch) {
+            if (const char* target = safesearch_target(q.name, cfg_.safesearch)) {
                 stats.safesearch++;
                 LOG_D("safesearch %s -> %s", q.name.c_str(), target);
                 return safesearch_reply(pkt, q, target);

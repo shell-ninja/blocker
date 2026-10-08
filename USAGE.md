@@ -337,7 +337,7 @@ Configuration (`/etc/blocker/blocker.conf`, read at start; immutable — change 
 | `workers` | `32` | UDP worker threads |
 | `upstream_timeout_ms` | `1500` | per-upstream timeout |
 | `cache_entries` / `cache_max_ttl` | `16384` / `300` | answer cache size / TTL ceiling (s) |
-| `safesearch`, `youtube_restrict` | `yes` | force SafeSearch / YouTube Restricted Mode |
+| `safesearch` | `yes` | force SafeSearch (Google, Bing, DuckDuckGo, Pixabay) |
 | `block_doh` | `yes` | sinkhole DoH/DoT provider names + Firefox canary |
 | `firewall` | `yes` | nftables: only root may send plain DNS / DoT off-box |
 | `browser_policies` | `yes` | managed policies disabling browser DoH |
@@ -359,9 +359,9 @@ Configuration (`/etc/blocker/blocker.conf`, read at start; immutable — change 
 3. rule engine: allow-list first, then exact / suffix / glob / keyword rules. Blocked → with the redirect
    `A 127.0.0.1`, `AAAA ::1` (or `A 0.0.0.0`, `AAAA ::` when the redirect is off, unavailable, or the name is on the built-in
    DoH list); other types (incl. `HTTPS`/`SVCB`) → `NOERROR` with no data, so browsers fall straight back;
-4. SafeSearch hosts (`google.*`, `bing.com`, `duckduckgo.com`, `youtube.com` …) are answered with a
+4. SafeSearch hosts (`google.*`, `bing.com`, `duckduckgo.com`, `pixabay.com`) are answered with a
    `CNAME` to the vendor's enforcement name (`forcesafesearch.google.com`, `strict.bing.com`,
-   `safe.duckduckgo.com`, `restrict.youtube.com`) and its addresses; failure → `SERVFAIL`, never the
+   `safe.duckduckgo.com`, `safesearch.pixabay.com`) and its addresses; failure → `SERVFAIL`, never the
    unfiltered site;
 5. everything else → upstream over a fresh randomly-ported UDP socket (txid and question verified),
    failover between upstreams, TCP for TCP clients, 16-shard TTL cache (TTLs decremented on hits).
@@ -391,8 +391,8 @@ systemd-resolved drop-ins and browser policy files. The daemon re-asserts the fl
 anywhere except loopback. (The daemon runs as root, so it can reach its upstreams.) The table is re-created
 if deleted.
 
-**Browser policies.** Chrome/Chromium/Brave/Edge: `DnsOverHttpsMode=off` (+ Google SafeSearch and
-YouTube restrict). Firefox: `DNSOverHTTPS` disabled and locked.
+**Browser policies.** Chrome/Chromium/Brave/Edge: `DnsOverHttpsMode=off` (+ Google SafeSearch).
+Firefox: `DNSOverHTTPS` disabled and locked.
 
 ## The landing-page redirect
 

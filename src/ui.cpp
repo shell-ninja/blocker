@@ -519,7 +519,7 @@ std::string format_check_verdict(const std::string& host_in, const std::string& 
     if (blocked) {
         line_action = paint("Action     : ", dim(fd), fd) + paint("Sinkholed to 0.0.0.0 (A) and :: (AAAA)", bright_red(fd), fd);
     } else if (safesearch) {
-        line_action = paint("Action     : ", dim(fd), fd) + paint("Enforcing SafeSearch / Restricted Mode", bright_cyan(fd), fd);
+        line_action = paint("Action     : ", dim(fd), fd) + paint("Enforcing SafeSearch", bright_cyan(fd), fd);
     } else {
         line_action = paint("Action     : ", dim(fd), fd) + paint("Forwarded to upstream DNS resolver", bright_green(fd), fd);
     }

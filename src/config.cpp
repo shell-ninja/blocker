@@ -125,7 +125,7 @@ Config Config::load(const std::string& path, std::vector<std::string>& warnings)
         } else if (key == "cache_max_ttl") {
             if (parse_u64(val, n) && n <= 86400) c.cache_max_ttl = uint32_t(n); else bad("expected 0..86400");
         } else if (key == "safesearch") { if (parse_bool(val, b)) c.safesearch = b; else bad("expected yes/no");
-        } else if (key == "youtube_restrict") { if (parse_bool(val, b)) c.youtube_restrict = b; else bad("expected yes/no");
+        } else if (key == "youtube_restrict") { if (!parse_bool(val, b)) bad("expected yes/no"); /* deprecated / removed */
         } else if (key == "block_doh") { if (parse_bool(val, b)) c.block_doh = b; else bad("expected yes/no");
         } else if (key == "firewall") { if (parse_bool(val, b)) c.firewall = b; else bad("expected yes/no");
         } else if (key == "browser_policies") { if (parse_bool(val, b)) c.browser_policies = b; else bad("expected yes/no");
@@ -300,14 +300,13 @@ std::string default_config_text(LockMode mode, uint64_t delay_secs, uint64_t win
     t += "upstream_timeout_ms = 1500\n";
     t += "cache_entries = 16384\n";
     t += "cache_max_ttl = 300\n\n";
-    t += "# Force SafeSearch (Google, Bing, DuckDuckGo, Pixabay) and YouTube Restricted Mode.\n";
-    t += "safesearch = yes\n";
-    t += "youtube_restrict = yes\n\n";
+    t += "# Force SafeSearch (Google, Bing, DuckDuckGo, Pixabay).\n";
+    t += "safesearch = yes\n\n";
     t += "# Sinkhole well-known DNS-over-HTTPS/TLS provider names and the Firefox DoH canary domain.\n";
     t += "block_doh = yes\n\n";
     t += "# nftables: drop plain DNS (53) and DoT (853) leaving the machine unless sent by root.\n";
     t += std::string("firewall = ") + (firewall ? "yes" : "no") + "\n\n";
-    t += "# Managed browser policies: disable browser-level DoH, force Google SafeSearch/YouTube restrict.\n";
+    t += "# Managed browser policies: disable browser-level DoH, force Google SafeSearch.\n";
     t += "browser_policies = yes\n\n";
     t += "# Keep /etc/resolv.conf pointing at this proxy (and immutable).\n";
     t += "takeover_resolver = yes\n\n";
