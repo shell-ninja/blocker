@@ -1,0 +1,16 @@
+{
+  "name": "Blocker Instagram Shield",
+  "version": "1.0",
+  "manifest_version": 3,
+  "description": "Block Instagram Explore and Search within Single Page App",
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.instagram.com/*",
+        "*://instagram.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

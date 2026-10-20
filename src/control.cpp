@@ -53,6 +53,8 @@ std::string ControlServer::status_text() {
          ", safesearch " + std::to_string(st.safesearch.load()) + ", upstream failures " + std::to_string(st.failed.load()) + "\n";
     s += "  redirect   : " + (c_.redirect ? c_.redirect->describe() : std::string("off")) + "\n";
     s += "  popup      : " + (c_.popup ? c_.popup->describe() : std::string("off")) + "\n";
+    s += "  curfew     : " + (c_.cfg.curfew ? std::string("enabled (12:00 AM - 03:00 AM auto-shutdown)") : std::string("off")) + "\n";
+    s += "  ig-explore : " + (c_.cfg.block_instagram_explore ? std::string("blocked (browser policies)") : std::string("allowed")) + "\n";
     s += "  lock       : " + c_.lock->describe() + "\n";
     s += "  protection :\n" + protect::report(c_.cfg);
     return s;
@@ -78,9 +80,22 @@ Reply ControlServer::handle(const std::string& req, int& exit_code) {
     if (cmd == "RELOAD") { c_.mgr->poll(c_.lock->window_open(), true); return okay("reloaded"); }
 
     if (cmd == "CHECK") {
-        std::string host = to_lower(trim(body));
+        std::string raw = to_lower(trim(body));
+        if (starts_with(raw, "https://")) raw = raw.substr(8);
+        else if (starts_with(raw, "http://")) raw = raw.substr(7);
+        size_t slash = raw.find('/');
+        std::string host = (slash != std::string::npos) ? raw.substr(0, slash) : raw;
+        std::string path = (slash != std::string::npos) ? raw.substr(slash) : "";
         while (!host.empty() && host.back() == '.') host.pop_back();
         if (host.empty()) return fail("usage: check <hostname>");
+
+        if (c_.cfg.block_instagram_explore && (host == "instagram.com" || ends_with(host, ".instagram.com"))) {
+            if (starts_with(path, "/explore") || starts_with(path, "/api/v1/discover/web/explore_grid") ||
+                starts_with(path, "/api/v1/web/search") || starts_with(path, "/api/v1/fbsearch")) {
+                return okay("BLOCKED (Browser Policy: URLBlocklist for Instagram Explore & Search)");
+            }
+        }
+
         Verdict v = c_.engine->rules()->check(host);
         if (v.blocked) return okay("BLOCKED (" + v.reason + ")");
         if (const char* t = safesearch_target(host, c_.cfg.safesearch))

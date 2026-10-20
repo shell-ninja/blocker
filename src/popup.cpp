@@ -352,6 +352,50 @@ std::string Popup::show(const std::string& host, uint16_t port, bool force) {
     return result;
 }
 
+void Popup::broadcast_alert(const std::string& title, const std::string& message, int expire_secs, bool urgent) {
+    // 1. Broadcast to open terminals via wall
+    std::string wall_text = title + "\n" + message + "\n";
+    run_cmd({"wall"}, &wall_text);
+
+    // 2. Broadcast to all active graphical sessions
+    std::vector<GuiSession> ss = sessions(true);
+    const std::string esc = popup_escape_markup(message);
+    const std::string secs = std::to_string(expire_secs);
+    for (const GuiSession& s : ss) {
+        std::vector<std::string> argv;
+        if (!cfg_.popup_helper.empty()) {
+            argv = {cfg_.popup_helper, title, message, secs, "curfew"};
+        } else {
+            const bool kde = s.desktop.find("KDE") != std::string::npos;
+            std::string nsend = find_exe("notify-send");
+            std::string zen = find_exe("zenity");
+            std::string yad = find_exe("yad");
+            std::string kd = find_exe("kdialog");
+
+            if (!nsend.empty()) {
+                argv = {nsend, "--app-name=Blocker",
+                        urgent ? "--urgency=critical" : "--urgency=normal",
+                        "--expire-time=" + std::to_string(expire_secs * 1000),
+                        title, message};
+            } else if (!zen.empty()) {
+                argv = {zen, urgent ? "--warning" : "--info", "--title=" + title, "--text=" + esc, "--timeout=" + secs, "--width=420"};
+            } else if (!yad.empty()) {
+                argv = {yad, "--title=" + title, "--text=" + esc, "--timeout=" + secs, "--button=OK:0", "--center", "--on-top", "--width=420"};
+            } else if (kde && !kd.empty()) {
+                std::string html;
+                for (char c : esc) { if (c == '\n') html += "<br>"; else html.push_back(c); }
+                argv = {kd, "--title", title, "--passivepopup", html, secs};
+            }
+        }
+        if (argv.empty()) continue;
+        pid_t pid = spawn_as(s.uid, s.env, argv);
+        if (pid > 0) {
+            std::lock_guard<std::mutex> g(mu_);
+            running_.push_back({pid, s.uid, mono_ms() + uint64_t(expire_secs + 2) * 1000});
+        }
+    }
+}
+
 std::string Popup::helper_name() const {
     if (!cfg_.popup_helper.empty()) return cfg_.popup_helper;
     for (const char* n : {"zenity", "yad", "kdialog", "notify-send"})

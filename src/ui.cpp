@@ -517,7 +517,11 @@ std::string format_check_verdict(const std::string& host_in, const std::string& 
 
     std::string line_action;
     if (blocked) {
-        line_action = paint("Action     : ", dim(fd), fd) + paint("Sinkholed to 0.0.0.0 (A) and :: (AAAA)", bright_red(fd), fd);
+        if (verdict.find("Browser Policy") != std::string::npos) {
+            line_action = paint("Action     : ", dim(fd), fd) + paint("Blocked by Managed Browser Enterprise Policy (URLBlocklist)", bright_red(fd), fd);
+        } else {
+            line_action = paint("Action     : ", dim(fd), fd) + paint("Sinkholed to 0.0.0.0 (A) and :: (AAAA)", bright_red(fd), fd);
+        }
     } else if (safesearch) {
         line_action = paint("Action     : ", dim(fd), fd) + paint("Enforcing SafeSearch", bright_cyan(fd), fd);
     } else {

@@ -141,6 +141,7 @@ static int cmd_install(const std::vector<std::string>& args) {
     uint64_t delay_h = 24, window_m = 30;
     bool random_pw = false, pw_stdin = false, firewall = true, popup = false, redirect = true;
     bool popup_set = false, popup_msg_set = false, redirect_set = false, redirect_url_set = false;
+    bool curfew = true, curfew_set = false, ig_block = true, ig_block_set = false;
     std::string popup_message, redirect_url;
     std::string upstream = "1.1.1.3, 1.0.0.3";
     for (size_t i = 0; i < args.size(); ++i) {
@@ -175,6 +176,10 @@ static int cmd_install(const std::vector<std::string>& args) {
             popup_msg_set = true;
             if (!popup_set) popup = true;  // Passing a custom message implies popup should be enabled
         }
+        else if (a == "--no-curfew") { curfew = false; curfew_set = true; }
+        else if (a == "--curfew") { curfew = true; curfew_set = true; }
+        else if (a == "--no-ig-block") { ig_block = false; ig_block_set = true; }
+        else if (a == "--ig-block") { ig_block = true; ig_block_set = true; }
         else { std::fprintf(stderr, "blocker: unknown or incomplete option '%s'\n", a.c_str()); return 2; }
     }
     // validate upstreams early
@@ -219,6 +224,16 @@ static int cmd_install(const std::vector<std::string>& args) {
             if (redirect_set) set_config_value(cur, "redirect", redirect ? "yes" : "no");
             if (redirect_url_set) set_config_value(cur, "redirect_url", redirect_url);
             notes.push_back(std::string("updated redirect settings (redirect = ") + (redirect ? "yes" : "no") + ")");
+            upgraded = true;
+        }
+        if (curfew_set) {
+            set_config_value(cur, "curfew", curfew ? "yes" : "no");
+            notes.push_back(std::string("updated curfew settings (curfew = ") + (curfew ? "yes" : "no") + ")");
+            upgraded = true;
+        }
+        if (ig_block_set) {
+            set_config_value(cur, "block_instagram_explore", ig_block ? "yes" : "no");
+            notes.push_back(std::string("updated Instagram explore blocking (block_instagram_explore = ") + (ig_block ? "yes" : "no") + ")");
             upgraded = true;
         }
         if (!upgraded) {

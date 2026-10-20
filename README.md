@@ -15,6 +15,8 @@ Blocker is a single C++ binary that filters adult content at the DNS level, syst
 
 - Runs a local DNS proxy on `127.0.0.1:53` — blocked names resolve to loopback, everything else is forwarded to Cloudflare Families (`1.1.1.3`)
 - Blocked sites get a `302` redirect to a YouTube video instead of an error page
+- **Instagram Explore & Search Guard**: Enforces immutable browser enterprise policies that block `instagram.com/explore` and search discovery endpoints while keeping home feed, messages, and profiles accessible
+- **Night Curfew & Auto-Shutdown**: Automatically powers off the PC at 12:00 AM and keeps it unusable until 03:00 AM (automatically shutting down if turned on during curfew). Issues desktop and terminal warnings at 11:30 PM, 11:45 PM, and a final urgent notification at 11:55 PM to save work
 - Rules are stored scrambled in a root-only vault — no readable file to delete
 - A systemd watchdog restarts the daemon within 1 second if it's killed; `systemctl stop blocker` is refused
 - Any change that loosens protection (removing rules, stopping the service, uninstalling) requires a password **and** a 72-hour waiting period. The timer resets on every reboot.

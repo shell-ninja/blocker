@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include "control.hpp"
+#include "curfew.hpp"
 #include "paths.hpp"
 #include "protect.hpp"
 #include "util.hpp"
@@ -63,11 +64,14 @@ int run_daemon() {
 
     protect::arm(cfg);  // after the sockets are up, so switching resolv.conf never leaves DNS dead
 
+    Curfew curfew(cfg);
+
     unsigned processed = 0;
     for (uint64_t tick = 1;; ++tick) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
         lock.tick();
         mgr.poll(lock.window_open());
+        curfew.tick(&popup);
         processed |= mgr.take_processed();
         if (tick % 2 == 0) {
             protect::maintain_fast(cfg, processed);

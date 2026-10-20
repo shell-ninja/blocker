@@ -32,6 +32,11 @@ struct Config {
     bool block_doh = true;          // sinkhole well-known DoH/DoT provider names + Firefox canary
     bool firewall = true;           // nftables: only root (the daemon) may send plain DNS/DoT off-box
     bool browser_policies = true;   // managed policies: disable browser DoH, force SafeSearch
+    bool block_instagram_explore = true; // block instagram.com/explore and search via browser policies
+    bool curfew = true;             // nightly curfew auto-shutdown (12:00 AM - 03:00 AM)
+    int curfew_start_hour = 0;      // 00:00 (12:00 AM)
+    int curfew_end_hour = 3;        // 03:00 (03:00 AM)
+    int curfew_boot_grace_sec = 15; // seconds before shutdown if booted during curfew
     bool takeover_resolver = true;  // point /etc/resolv.conf at 127.0.0.1 and keep it there
     bool log_blocked = true;
     // Landing redirect (see redirect.hpp): blocked names resolve to loopback and a local HTTP server answers 302.

@@ -9,7 +9,7 @@ LDHARDEN := -pie -Wl,-z,relro,-z,now
 LIBS     := -pthread
 
 SRC  := src/ui.cpp src/util.cpp src/sha256.cpp src/dns.cpp src/config.cpp src/rules.cpp src/engine.cpp \
-        src/lock.cpp src/protect.cpp src/rulesmgr.cpp src/vault.cpp src/popup.cpp src/redirect.cpp src/control.cpp src/daemon.cpp src/main.cpp
+        src/lock.cpp src/protect.cpp src/rulesmgr.cpp src/vault.cpp src/popup.cpp src/curfew.cpp src/redirect.cpp src/control.cpp src/daemon.cpp src/main.cpp
 HDR  := $(wildcard src/*.hpp) gen/embedded.hpp
 UNIT := blocker.service blocker-guard.service blocker-guard.timer src/charset_tables.inc src/core/compat/tables/iana_punycode_tables.inc
 

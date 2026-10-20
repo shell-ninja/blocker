@@ -59,6 +59,8 @@ const PolicyTarget kPolicies[] = {
     {"/etc/chromium/policies/managed", "blocker.json", false},
     {"/etc/chromium-browser/policies/managed", "blocker.json", false},
     {"/etc/brave/policies/managed", "blocker.json", false},
+    {"/etc/brave-browser/policies/managed", "blocker.json", false},
+    {"/etc/brave-origin/policies/managed", "blocker.json", false},
     {"/etc/opt/edge/policies/managed", "blocker.json", false},
 };
 
@@ -317,10 +319,55 @@ static void firewall_remove() { run_cmd({"nft", "delete", "table", "inet", "bloc
 
 // ---------------------------------------------------------------- browser policies
 static std::string policy_json(bool firefox, const Config& cfg) {
-    if (firefox)
-        return "{\n  \"blocker-managed\": true,\n  \"policies\": {\n    \"DNSOverHTTPS\": { \"Enabled\": false, \"Locked\": true }\n  }\n}\n";
+    if (firefox) {
+        std::string j = "{\n  \"blocker-managed\": true,\n  \"policies\": {\n    \"DNSOverHTTPS\": { \"Enabled\": false, \"Locked\": true }";
+        if (cfg.block_instagram_explore) {
+            j += ",\n    \"WebsiteFilter\": {\n"
+                 "      \"Block\": [\n"
+                 "        \"*://*.instagram.com/explore*\",\n"
+                 "        \"*://instagram.com/explore*\",\n"
+                 "        \"*://*.instagram.com/explore/*\",\n"
+                 "        \"*://instagram.com/explore/*\",\n"
+                 "        \"*://*.instagram.com/api/v1/discover/web/explore_grid/*\",\n"
+                 "        \"*://instagram.com/api/v1/discover/web/explore_grid/*\",\n"
+                 "        \"*://*.instagram.com/api/v1/web/search/topsearch/*\",\n"
+                 "        \"*://instagram.com/api/v1/web/search/topsearch/*\",\n"
+                 "        \"*://*.instagram.com/api/v1/fbsearch/*\",\n"
+                 "        \"*://instagram.com/api/v1/fbsearch/*\"\n"
+                 "      ]\n"
+                 "    }";
+        }
+        return j + "\n  }\n}\n";
+    }
     std::string j = "{\n  \"DnsOverHttpsMode\": \"off\",\n  \"BuiltInDnsClientEnabled\": false";
     if (cfg.safesearch) j += ",\n  \"ForceGoogleSafeSearch\": true";
+    if (cfg.block_instagram_explore) {
+        j += ",\n  \"URLBlocklist\": [\n"
+             "    \"instagram.com/explore\",\n"
+             "    \"instagram.com/explore/*\",\n"
+             "    \".instagram.com/explore\",\n"
+             "    \".instagram.com/explore/*\",\n"
+             "    \"https://instagram.com/explore\",\n"
+             "    \"https://instagram.com/explore/*\",\n"
+             "    \"https://.instagram.com/explore\",\n"
+             "    \"https://.instagram.com/explore/*\",\n"
+             "    \"instagram.com/web/search\",\n"
+             "    \"instagram.com/web/search/*\",\n"
+             "    \".instagram.com/web/search\",\n"
+             "    \".instagram.com/web/search/*\",\n"
+             "    \"https://.instagram.com/web/search\",\n"
+             "    \"https://.instagram.com/web/search/*\",\n"
+             "    \"instagram.com/api/v1/discover/web/explore_grid\",\n"
+             "    \".instagram.com/api/v1/discover/web/explore_grid\",\n"
+             "    \"https://.instagram.com/api/v1/discover/web/explore_grid\",\n"
+             "    \"instagram.com/api/v1/web/search/topsearch\",\n"
+             "    \".instagram.com/api/v1/web/search/topsearch\",\n"
+             "    \"https://.instagram.com/api/v1/web/search/topsearch\",\n"
+             "    \"instagram.com/api/v1/fbsearch\",\n"
+             "    \".instagram.com/api/v1/fbsearch\",\n"
+             "    \"https://.instagram.com/api/v1/fbsearch\"\n"
+             "  ]";
+    }
     return j + "\n}\n";
 }
 

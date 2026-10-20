@@ -129,6 +129,14 @@ Config Config::load(const std::string& path, std::vector<std::string>& warnings)
         } else if (key == "block_doh") { if (parse_bool(val, b)) c.block_doh = b; else bad("expected yes/no");
         } else if (key == "firewall") { if (parse_bool(val, b)) c.firewall = b; else bad("expected yes/no");
         } else if (key == "browser_policies") { if (parse_bool(val, b)) c.browser_policies = b; else bad("expected yes/no");
+        } else if (key == "block_instagram_explore") { if (parse_bool(val, b)) c.block_instagram_explore = b; else bad("expected yes/no");
+        } else if (key == "curfew") { if (parse_bool(val, b)) c.curfew = b; else bad("expected yes/no");
+        } else if (key == "curfew_start_hour") {
+            if (parse_u64(val, n) && n <= 23) c.curfew_start_hour = int(n); else bad("expected 0..23");
+        } else if (key == "curfew_end_hour") {
+            if (parse_u64(val, n) && n <= 23) c.curfew_end_hour = int(n); else bad("expected 0..23");
+        } else if (key == "curfew_boot_grace_sec") {
+            if (parse_u64(val, n) && n >= 1 && n <= 300) c.curfew_boot_grace_sec = int(n); else bad("expected 1..300");
         } else if (key == "takeover_resolver") { if (parse_bool(val, b)) c.takeover_resolver = b; else bad("expected yes/no");
         } else if (key == "redirect") { if (parse_bool(val, b)) c.redirect = b; else bad("expected yes/no");
         } else if (key == "redirect_url") { if (valid_redirect_url(val)) c.redirect_url = val; else bad("expected an http:// or https:// URL without spaces or quotes");
@@ -237,6 +245,22 @@ bool upgrade_config_text(std::string& text, bool popup, const std::string& popup
         notes.push_back("added the popup settings");
         changed = true;
     }
+    if (!has_key(text, "block_instagram_explore")) {
+        text += "\n# Block Instagram explore page (instagram.com/explore) and search API via browser policies.\n";
+        text += "block_instagram_explore = yes\n";
+        notes.push_back("added Instagram explore & search blocking setting");
+        changed = true;
+    }
+    if (!has_key(text, "curfew")) {
+        text += "\n# Night curfew: automatically shuts down the PC at 12:00 AM and keeps it unusable until 03:00 AM.\n";
+        text += "# Sends notifications at 11:30 PM, 11:45 PM, and a final warning to save work at 11:55 PM.\n";
+        text += "curfew = yes\n";
+        text += "curfew_start_hour = 0\n";
+        text += "curfew_end_hour = 3\n";
+        text += "curfew_boot_grace_sec = 15\n";
+        notes.push_back("added Night Curfew settings (12:00 AM - 03:00 AM auto-shutdown)");
+        changed = true;
+    }
     return changed;
 }
 
@@ -308,6 +332,13 @@ std::string default_config_text(LockMode mode, uint64_t delay_secs, uint64_t win
     t += std::string("firewall = ") + (firewall ? "yes" : "no") + "\n\n";
     t += "# Managed browser policies: disable browser-level DoH, force Google SafeSearch.\n";
     t += "browser_policies = yes\n\n";
+    t += "# Block Instagram explore page and search queries via managed browser policies.\n";
+    t += "block_instagram_explore = yes\n\n";
+    t += "# Night curfew: shut down PC at 12:00 AM, prevent use between 12:00 AM and 03:00 AM.\n";
+    t += "curfew = yes\n";
+    t += "curfew_start_hour = 0\n";
+    t += "curfew_end_hour = 3\n";
+    t += "curfew_boot_grace_sec = 15\n\n";
     t += "# Keep /etc/resolv.conf pointing at this proxy (and immutable).\n";
     t += "takeover_resolver = yes\n\n";
     t += redirect_config_block(redirect, redirect_url) + "\n";
