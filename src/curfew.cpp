@@ -15,11 +15,13 @@ bool Curfew::in_curfew_window() const {
     time_t now_sec = time(nullptr);
     tm lt{};
     if (!localtime_r(&now_sec, &lt)) return false;
-    int hour = lt.tm_hour;
-    if (cfg_.curfew_start_hour <= cfg_.curfew_end_hour) {
-        return hour >= cfg_.curfew_start_hour && hour < cfg_.curfew_end_hour;
+    int now_m = lt.tm_hour * 60 + lt.tm_min;
+    int start_m = cfg_.curfew_start_hour * 60 + cfg_.curfew_start_min;
+    int end_m = cfg_.curfew_end_hour * 60 + cfg_.curfew_end_min;
+    if (start_m <= end_m) {
+        return now_m >= start_m && now_m < end_m;
     }
-    return hour >= cfg_.curfew_start_hour || hour < cfg_.curfew_end_hour;
+    return now_m >= start_m || now_m < end_m;
 }
 
 void Curfew::tick(Popup* popup) {
@@ -29,32 +31,28 @@ void Curfew::tick(Popup* popup) {
     tm lt{};
     if (!localtime_r(&now_sec, &lt)) return;
 
-    if (lt.tm_yday != last_yday_) {
-        last_yday_ = lt.tm_yday;
-        warned_2330_ = false;
-        warned_2345_ = false;
-        warned_2355_ = false;
-        shutdown_initiated_ = false;
-        poweroff_at_ms_ = 0;
-    }
+    int now_m = lt.tm_hour * 60 + lt.tm_min;
+    int start_m = cfg_.curfew_start_hour * 60 + cfg_.curfew_start_min;
+    int end_m = cfg_.curfew_end_hour * 60 + cfg_.curfew_end_min;
 
-    int hour = lt.tm_hour;
-    int min = lt.tm_min;
-
-    bool in_window = (cfg_.curfew_start_hour <= cfg_.curfew_end_hour)
-                         ? (hour >= cfg_.curfew_start_hour && hour < cfg_.curfew_end_hour)
-                         : (hour >= cfg_.curfew_start_hour || hour < cfg_.curfew_end_hour);
+    bool in_window = (start_m <= end_m)
+                         ? (now_m >= start_m && now_m < end_m)
+                         : (now_m >= start_m || now_m < end_m);
 
     if (in_window) {
         if (!shutdown_initiated_) {
             shutdown_initiated_ = true;
             int grace = cfg_.curfew_boot_grace_sec > 0 ? cfg_.curfew_boot_grace_sec : 15;
             poweroff_at_ms_ = mono_ms() + uint64_t(grace) * 1000;
-            LOG_W("curfew: night curfew active (12 AM - 3 AM). Poweroff in %d seconds.", grace);
+            char time_buf[64];
+            snprintf(time_buf, sizeof(time_buf), "%02d:%02d - %02d:%02d",
+                     cfg_.curfew_start_hour, cfg_.curfew_start_min,
+                     cfg_.curfew_end_hour, cfg_.curfew_end_min);
+            LOG_W("curfew: night curfew active (%s). Poweroff in %d seconds.", time_buf, grace);
             if (popup) {
                 popup->broadcast_alert(
                     "Blocker: Night Curfew Active",
-                    "Night Curfew is active (12:00 AM - 03:00 AM).\n"
+                    "Night Curfew is active (" + std::string(time_buf) + ").\n"
                     "The PC is locked and will shut down in " + std::to_string(grace) + " seconds.",
                     grace, true);
             }
@@ -65,41 +63,82 @@ void Curfew::tick(Popup* popup) {
         return;
     }
 
-    // Outside curfew window: reset shutdown trigger and check evening warnings
+    // Outside curfew window: reset shutdown trigger and check countdown warnings
     shutdown_initiated_ = false;
     poweroff_at_ms_ = 0;
 
-    // Evening countdown warnings leading up to 12:00 AM (midnight)
-    if (hour == 23) {
-        if (min >= 30 && min < 45 && !warned_2330_) {
-            warned_2330_ = true;
-            LOG_I("curfew: sending 11:30 PM reminder");
-            if (popup) {
-                popup->broadcast_alert(
-                    "Blocker: Bedtime Reminder",
-                    "Night Curfew begins at 12:00 AM (30 minutes remaining).\nPlease start wrapping up your activities.",
-                    15, false);
-            }
-        } else if (min >= 45 && min < 55 && !warned_2345_) {
-            warned_2345_ = true;
-            LOG_I("curfew: sending 11:45 PM warning");
-            if (popup) {
-                popup->broadcast_alert(
-                    "Blocker: Bedtime Warning",
-                    "Night Curfew begins at 12:00 AM (15 minutes remaining).\nPlease wrap up and close your applications.",
-                    15, false);
-            }
-        } else if (min >= 55 && !warned_2355_) {
-            warned_2355_ = true;
-            LOG_W("curfew: sending 11:55 PM final warning");
-            if (popup) {
-                popup->broadcast_alert(
-                    "Blocker: FINAL WARNING",
-                    "FINAL WARNING: PC will automatically shut down in 5 minutes at 12:00 AM!\n"
-                    "Save all your work and open projects immediately.",
-                    30, true);
-            }
+    // Calculate minutes until auto-shutdown
+    int mins_until = (start_m - now_m + 1440) % 1440;
+
+    // Outside 30-minute pre-shutdown countdown window: reset warning flags
+    if (mins_until > 35) {
+        warned_30m_ = false;
+        warned_15m_ = false;
+        warned_5m_ = false;
+        warned_1m_ = false;
+        return;
+    }
+
+    std::string target_time = format_time_hm(cfg_.curfew_start_hour, cfg_.curfew_start_min);
+    uint64_t now_mono = mono_ms();
+    // Retry interval: if a warning was not successfully delivered yet (e.g. desktop session was still loading), retry every 5s
+    bool retry_due = (now_mono - last_retry_mono_ms_ >= 5000);
+
+    // Stage 1: 30 minutes remaining (between 16 and 30 minutes remaining)
+    if (mins_until <= 30 && mins_until > 15 && (!warned_30m_ || retry_due)) {
+        if (!warned_30m_) LOG_I("curfew: sending 30-minute reminder for auto-shutdown at %s", target_time.c_str());
+        bool delivered = false;
+        if (popup) {
+            delivered = popup->broadcast_alert(
+                "Blocker: Bedtime Reminder",
+                "Night Curfew begins in " + std::to_string(mins_until) + " minutes (at " + target_time + ").\n"
+                "Please start wrapping up your activities.",
+                15, false);
         }
+        if (delivered) warned_30m_ = true;
+        last_retry_mono_ms_ = now_mono;
+    }
+    // Stage 2: 15 minutes remaining (between 6 and 15 minutes remaining)
+    else if (mins_until <= 15 && mins_until > 5 && (!warned_15m_ || retry_due)) {
+        if (!warned_15m_) LOG_I("curfew: sending 15-minute warning for auto-shutdown at %s", target_time.c_str());
+        bool delivered = false;
+        if (popup) {
+            delivered = popup->broadcast_alert(
+                "Blocker: Bedtime Warning",
+                "Night Curfew begins in " + std::to_string(mins_until) + " minutes (at " + target_time + ").\n"
+                "Please wrap up and close your applications.",
+                15, false);
+        }
+        if (delivered) warned_15m_ = true;
+        last_retry_mono_ms_ = now_mono;
+    }
+    // Stage 3: 5 minutes remaining (between 2 and 5 minutes remaining)
+    else if (mins_until <= 5 && mins_until > 1 && (!warned_5m_ || retry_due)) {
+        if (!warned_5m_) LOG_W("curfew: sending 5-minute final warning for auto-shutdown at %s", target_time.c_str());
+        bool delivered = false;
+        if (popup) {
+            delivered = popup->broadcast_alert(
+                "Blocker: FINAL WARNING",
+                "FINAL WARNING: PC will automatically shut down in " + std::to_string(mins_until) + " minutes at " + target_time + "!\n"
+                "Save all your work and open projects immediately.",
+                30, true);
+        }
+        if (delivered) warned_5m_ = true;
+        last_retry_mono_ms_ = now_mono;
+    }
+    // Stage 4: 1 minute remaining (urgent final countdown)
+    else if (mins_until <= 1 && mins_until > 0 && (!warned_1m_ || retry_due)) {
+        if (!warned_1m_) LOG_W("curfew: sending 1-minute shutdown imminent alert for auto-shutdown at %s", target_time.c_str());
+        bool delivered = false;
+        if (popup) {
+            delivered = popup->broadcast_alert(
+                "Blocker: SHUTDOWN IMMINENT",
+                "CRITICAL: PC is shutting down in 1 minute (at " + target_time + ")!\n"
+                "Save all work and close open files NOW.",
+                30, true);
+        }
+        if (delivered) warned_1m_ = true;
+        last_retry_mono_ms_ = now_mono;
     }
 }
 

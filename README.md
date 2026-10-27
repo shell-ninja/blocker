@@ -16,7 +16,7 @@ Blocker is a single C++ binary that filters adult content at the DNS level, syst
 - Runs a local DNS proxy on `127.0.0.1:53` — blocked names resolve to loopback, everything else is forwarded to Cloudflare Families (`1.1.1.3`)
 - Blocked sites get a `302` redirect to a YouTube video instead of an error page
 - **Instagram Explore & Search Guard**: Enforces immutable browser enterprise policies that block `instagram.com/explore` and search discovery endpoints while keeping home feed, messages, and profiles accessible
-- **Night Curfew & Auto-Shutdown**: Automatically powers off the PC at 12:00 AM and keeps it unusable until 03:00 AM (automatically shutting down if turned on during curfew). Issues desktop and terminal warnings at 11:30 PM, 11:45 PM, and a final urgent notification at 11:55 PM to save work
+- **Night Curfew & Auto-Shutdown**: Automatically powers off the PC at a user-configured time (default 12:00 AM / 00:00) and keeps it unusable until morning (default 03:00 AM). Dynamically issues desktop alerts and terminal warnings starting 30 minutes before shutdown (at 30m, 15m, 5m, and 1m remaining) to give you plenty of time to save your work.
 - Rules are stored scrambled in a root-only vault — no readable file to delete
 - A systemd watchdog restarts the daemon within 1 second if it's killed; `systemctl stop blocker` is refused
 - Any change that loosens protection (removing rules, stopping the service, uninstalling) requires a password **and** a 72-hour waiting period. The timer resets on every reboot.
@@ -41,16 +41,15 @@ chmod +x setup.sh
 For the full accountability setup (let someone else hold the password):
 
 ```sh
-./setup.sh --random-password --delay-hours 72
+./setup.sh --random-password --delay-hours 72 --curfew-time 23:30
 ```
 
 The script will:
 1. Check that your system meets the requirements
 2. Build the binary (`build/blocker`)
-3. Ask for confirmation
+3. Ask for confirmation and optional curfew auto-shutdown schedule
 4. Enable and start the systemd service
-5. Verify that blocking works
-
+5. Verify that blocking and desktop alerts work
 
 ## Setup options
 
@@ -59,6 +58,10 @@ The script will:
 | `--random-password` | Generate a 24-character password (print once, hand to someone else) |
 | `--delay-hours N` | Hours to wait after `unlock-request` before changes are allowed (default 24) |
 | `--mode password\|delay\|both` | How changes are gated. `both` = password + waiting period |
+| `--curfew-time HH:MM` | Set auto-shutdown curfew time (e.g. `23:30` or `00:00`, default `00:00`) |
+| `--curfew-start HH:MM` | Alias for `--curfew-time` |
+| `--curfew-end HH:MM` | Set curfew wake/end time (e.g. `05:00`, default `03:00`) |
+| `--curfew / --no-curfew` | Enable or disable night curfew auto-shutdown |
 | `--no-firewall` | Skip the nftables DNS-bypass rules |
 | `--build-only` | Just compile, install nothing |
 | `--upgrade` | Replace an existing install |

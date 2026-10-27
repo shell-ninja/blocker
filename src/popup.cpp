@@ -106,8 +106,12 @@ std::string find_exe(const char* name) {
 }
 
 // The environment variables a GUI program needs to reach the user's display and session bus.
-const char* const kGuiVars[] = {"DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR",
-                                "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE", "XDG_DATA_DIRS", "LANG", "LANGUAGE", "LC_ALL"};
+const char* const kGuiVars[] = {
+    "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR",
+    "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION",
+    "XDG_DATA_DIRS", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME",
+    "HYPRLAND_INSTANCE_SIGNATURE", "SWAYSOCK", "LANG", "LANGUAGE", "LC_ALL"
+};
 
 // Builds the helper's argv, or an empty vector when nothing suitable is installed.
 std::vector<std::string> helper_argv(const Config& cfg, const std::string& desktop, const std::string& title,
@@ -237,6 +241,67 @@ std::vector<GuiSession> find_gui_sessions() {
         best[st.st_uid] = {score, s};
     }
     closedir(d);
+
+    // Also inspect /run/user/<uid> for logged-in users with active systemd user sessions
+    if (DIR* rud = opendir("/run/user")) {
+        while (dirent* ue = readdir(rud)) {
+            const char* un = ue->d_name;
+            if (*un < '1' || *un > '9') continue;
+            bool digits = true;
+            for (const char* c = un; *c; ++c) digits &= (*c >= '0' && *c <= '9');
+            if (!digits) continue;
+            char* endp = nullptr;
+            errno = 0;
+            unsigned long uval = strtoul(un, &endp, 10);
+            if (errno || !endp || *endp || !regular_uid(static_cast<uid_t>(uval))) continue;
+            uid_t u = static_cast<uid_t>(uval);
+            std::string udir = std::string("/run/user/") + un;
+            std::string bus_path = udir + "/bus";
+            bool has_bus = (access(bus_path.c_str(), R_OK | W_OK) == 0);
+            if (!has_bus) continue;
+
+            auto it = best.find(u);
+            if (it == best.end()) {
+                GuiSession s;
+                s.uid = u;
+                s.env.emplace_back("XDG_RUNTIME_DIR", udir);
+                s.env.emplace_back("DBUS_SESSION_BUS_ADDRESS", "unix:path=" + bus_path);
+                for (int w = 0; w <= 3; ++w) {
+                    std::string ws = udir + "/wayland-" + std::to_string(w);
+                    if (access(ws.c_str(), R_OK | W_OK) == 0) {
+                        s.env.emplace_back("WAYLAND_DISPLAY", "wayland-" + std::to_string(w));
+                        break;
+                    }
+                }
+                for (int x = 0; x <= 3; ++x) {
+                    std::string xs = "/tmp/.X11-unix/X" + std::to_string(x);
+                    if (access(xs.c_str(), R_OK | W_OK) == 0) {
+                        s.env.emplace_back("DISPLAY", ":" + std::to_string(x));
+                        break;
+                    }
+                }
+                best[u] = {1, s};
+            } else {
+                bool bus_present = false, wl_present = false;
+                for (const auto& kv : it->second.second.env) {
+                    if (kv.first == "DBUS_SESSION_BUS_ADDRESS") bus_present = true;
+                    if (kv.first == "WAYLAND_DISPLAY") wl_present = true;
+                }
+                if (!bus_present) it->second.second.env.emplace_back("DBUS_SESSION_BUS_ADDRESS", "unix:path=" + bus_path);
+                if (!wl_present) {
+                    for (int w = 0; w <= 3; ++w) {
+                        std::string ws = udir + "/wayland-" + std::to_string(w);
+                        if (access(ws.c_str(), R_OK | W_OK) == 0) {
+                            it->second.second.env.emplace_back("WAYLAND_DISPLAY", "wayland-" + std::to_string(w));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        closedir(rud);
+    }
+
     for (auto& kv : best) out.push_back(kv.second.second);
     return out;
 }
@@ -352,15 +417,22 @@ std::string Popup::show(const std::string& host, uint16_t port, bool force) {
     return result;
 }
 
-void Popup::broadcast_alert(const std::string& title, const std::string& message, int expire_secs, bool urgent) {
+bool Popup::broadcast_alert(const std::string& title, const std::string& message, int expire_secs, bool urgent) {
     // 1. Broadcast to open terminals via wall
     std::string wall_text = title + "\n" + message + "\n";
     run_cmd({"wall"}, &wall_text);
 
     // 2. Broadcast to all active graphical sessions
     std::vector<GuiSession> ss = sessions(true);
+    if (ss.empty()) {
+        LOG_D("popup: broadcast_alert: no graphical sessions found");
+        return false;
+    }
+
     const std::string esc = popup_escape_markup(message);
     const std::string secs = std::to_string(expire_secs);
+    int notified_count = 0;
+
     for (const GuiSession& s : ss) {
         std::vector<std::string> argv;
         if (!cfg_.popup_helper.empty()) {
@@ -375,6 +447,7 @@ void Popup::broadcast_alert(const std::string& title, const std::string& message
             if (!nsend.empty()) {
                 argv = {nsend, "--app-name=Blocker",
                         urgent ? "--urgency=critical" : "--urgency=normal",
+                        "--icon=dialog-warning",
                         "--expire-time=" + std::to_string(expire_secs * 1000),
                         title, message};
             } else if (!zen.empty()) {
@@ -388,12 +461,37 @@ void Popup::broadcast_alert(const std::string& title, const std::string& message
             }
         }
         if (argv.empty()) continue;
-        pid_t pid = spawn_as(s.uid, s.env, argv);
-        if (pid > 0) {
-            std::lock_guard<std::mutex> g(mu_);
-            running_.push_back({pid, s.uid, mono_ms() + uint64_t(expire_secs + 2) * 1000});
+
+        bool delivered = false;
+        // If root on systemd, try systemd-run --user for direct PAM session connection
+        if (geteuid() == 0 && argv[0].find("notify-send") != std::string::npos) {
+            std::string sd_run = find_exe("systemd-run");
+            if (!sd_run.empty()) {
+                std::vector<std::string> sd_cmd = {
+                    sd_run, "--user", "--machine=" + std::to_string(s.uid) + "@.host", "--quiet", "--"
+                };
+                sd_cmd.insert(sd_cmd.end(), argv.begin(), argv.end());
+                if (run_cmd(sd_cmd) == 0) {
+                    delivered = true;
+                    ++notified_count;
+                    LOG_I("popup: alert delivered to uid %u via systemd-run", unsigned(s.uid));
+                }
+            }
+        }
+
+        if (!delivered) {
+            pid_t pid = spawn_as(s.uid, s.env, argv);
+            if (pid > 0) {
+                std::lock_guard<std::mutex> g(mu_);
+                running_.push_back({pid, s.uid, mono_ms() + uint64_t(expire_secs + 2) * 1000});
+                ++notified_count;
+                LOG_I("popup: alert spawned for uid %u via %s (pid %d)", unsigned(s.uid), argv[0].c_str(), int(pid));
+            } else {
+                LOG_W("popup: failed to spawn alert helper for uid %u", unsigned(s.uid));
+            }
         }
     }
+    return notified_count > 0;
 }
 
 std::string Popup::helper_name() const {

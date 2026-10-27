@@ -90,6 +90,7 @@ std::string format_status_dashboard(const std::string& version,
                                    const std::string& queries_summary,
                                    const std::string& redirect_desc,
                                    const std::string& popup_desc,
+                                   const std::string& curfew_desc,
                                    const std::string& lock_desc,
                                    const std::string& protect_report,
                                    int fd = 1);

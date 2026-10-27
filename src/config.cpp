@@ -131,10 +131,20 @@ Config Config::load(const std::string& path, std::vector<std::string>& warnings)
         } else if (key == "browser_policies") { if (parse_bool(val, b)) c.browser_policies = b; else bad("expected yes/no");
         } else if (key == "block_instagram_explore") { if (parse_bool(val, b)) c.block_instagram_explore = b; else bad("expected yes/no");
         } else if (key == "curfew") { if (parse_bool(val, b)) c.curfew = b; else bad("expected yes/no");
+        } else if (key == "curfew_start" || key == "curfew_time") {
+            int h = 0, m = 0;
+            if (parse_time_hm(val, h, m)) { c.curfew_start_hour = h; c.curfew_start_min = m; } else bad("expected HH:MM (00:00..23:59)");
+        } else if (key == "curfew_end") {
+            int h = 0, m = 0;
+            if (parse_time_hm(val, h, m)) { c.curfew_end_hour = h; c.curfew_end_min = m; } else bad("expected HH:MM (00:00..23:59)");
         } else if (key == "curfew_start_hour") {
             if (parse_u64(val, n) && n <= 23) c.curfew_start_hour = int(n); else bad("expected 0..23");
+        } else if (key == "curfew_start_min") {
+            if (parse_u64(val, n) && n <= 59) c.curfew_start_min = int(n); else bad("expected 0..59");
         } else if (key == "curfew_end_hour") {
             if (parse_u64(val, n) && n <= 23) c.curfew_end_hour = int(n); else bad("expected 0..23");
+        } else if (key == "curfew_end_min") {
+            if (parse_u64(val, n) && n <= 59) c.curfew_end_min = int(n); else bad("expected 0..59");
         } else if (key == "curfew_boot_grace_sec") {
             if (parse_u64(val, n) && n >= 1 && n <= 300) c.curfew_boot_grace_sec = int(n); else bad("expected 1..300");
         } else if (key == "takeover_resolver") { if (parse_bool(val, b)) c.takeover_resolver = b; else bad("expected yes/no");
@@ -252,16 +262,47 @@ bool upgrade_config_text(std::string& text, bool popup, const std::string& popup
         changed = true;
     }
     if (!has_key(text, "curfew")) {
-        text += "\n# Night curfew: automatically shuts down the PC at 12:00 AM and keeps it unusable until 03:00 AM.\n";
-        text += "# Sends notifications at 11:30 PM, 11:45 PM, and a final warning to save work at 11:55 PM.\n";
+        text += "\n# Night curfew: automatically shuts down the PC at curfew_start and keeps it unusable until curfew_end.\n";
+        text += "# Sends notifications at 30 min, 15 min, 5 min, and 1 min before shutdown.\n";
         text += "curfew = yes\n";
-        text += "curfew_start_hour = 0\n";
-        text += "curfew_end_hour = 3\n";
+        text += "curfew_start = 00:00\n";
+        text += "curfew_end = 03:00\n";
         text += "curfew_boot_grace_sec = 15\n";
-        notes.push_back("added Night Curfew settings (12:00 AM - 03:00 AM auto-shutdown)");
+        notes.push_back("added Night Curfew settings (auto-shutdown)");
         changed = true;
     }
     return changed;
+}
+
+bool parse_time_hm(const std::string& str, int& hour, int& min) {
+    std::string s = trim(str);
+    size_t colon = s.find(':');
+    if (colon != std::string::npos) {
+        uint64_t h = 0, m = 0;
+        if (parse_u64(s.substr(0, colon), h) && h <= 23 &&
+            parse_u64(s.substr(colon + 1), m) && m <= 59) {
+            hour = int(h);
+            min = int(m);
+            return true;
+        }
+        return false;
+    }
+    uint64_t h = 0;
+    if (parse_u64(s, h) && h <= 23) {
+        hour = int(h);
+        min = 0;
+        return true;
+    }
+    return false;
+}
+
+std::string format_time_hm(int hour, int min) {
+    char buf[32];
+    int h12 = hour % 12;
+    if (h12 == 0) h12 = 12;
+    const char* ampm = hour < 12 ? "AM" : "PM";
+    snprintf(buf, sizeof(buf), "%02d:%02d (%d:%02d %s)", hour, min, h12, min, ampm);
+    return buf;
 }
 
 bool set_config_value(std::string& text, const std::string& key, const std::string& val) {
@@ -308,7 +349,9 @@ std::string popup_config_block(bool popup, const std::string& popup_message) {
 
 std::string default_config_text(LockMode mode, uint64_t delay_secs, uint64_t window_secs,
                                 const std::string& upstreams, bool firewall, bool popup,
-                                const std::string& popup_message, bool redirect, const std::string& redirect_url) {
+                                const std::string& popup_message, bool redirect, const std::string& redirect_url,
+                                bool curfew, int curfew_start_h, int curfew_start_m,
+                                int curfew_end_h, int curfew_end_m) {
     std::string t;
     t += "# /etc/blocker/blocker.conf - read once when the daemon starts.\n";
     t += "# This file is root-owned and immutable (chattr +i) while blocker is running.\n\n";
@@ -334,10 +377,14 @@ std::string default_config_text(LockMode mode, uint64_t delay_secs, uint64_t win
     t += "browser_policies = yes\n\n";
     t += "# Block Instagram explore page and search queries via managed browser policies.\n";
     t += "block_instagram_explore = yes\n\n";
-    t += "# Night curfew: shut down PC at 12:00 AM, prevent use between 12:00 AM and 03:00 AM.\n";
-    t += "curfew = yes\n";
-    t += "curfew_start_hour = 0\n";
-    t += "curfew_end_hour = 3\n";
+    char cur_s[16], cur_e[16];
+    snprintf(cur_s, sizeof(cur_s), "%02d:%02d", curfew_start_h, curfew_start_m);
+    snprintf(cur_e, sizeof(cur_e), "%02d:%02d", curfew_end_h, curfew_end_m);
+    t += "# Night curfew: automatically shuts down PC at curfew_start and prevents use until curfew_end.\n";
+    t += "# Sends warning notifications at 30 min, 15 min, 5 min, and 1 min before shutdown.\n";
+    t += std::string("curfew = ") + (curfew ? "yes" : "no") + "\n";
+    t += std::string("curfew_start = ") + cur_s + "\n";
+    t += std::string("curfew_end = ") + cur_e + "\n";
     t += "curfew_boot_grace_sec = 15\n\n";
     t += "# Keep /etc/resolv.conf pointing at this proxy (and immutable).\n";
     t += "takeover_resolver = yes\n\n";

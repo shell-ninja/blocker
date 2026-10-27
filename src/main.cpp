@@ -142,6 +142,8 @@ static int cmd_install(const std::vector<std::string>& args) {
     bool random_pw = false, pw_stdin = false, firewall = true, popup = false, redirect = true;
     bool popup_set = false, popup_msg_set = false, redirect_set = false, redirect_url_set = false;
     bool curfew = true, curfew_set = false, ig_block = true, ig_block_set = false;
+    int curfew_start_h = 0, curfew_start_m = 0, curfew_end_h = 3, curfew_end_m = 0;
+    bool curfew_start_set = false, curfew_end_set = false;
     std::string popup_message, redirect_url;
     std::string upstream = "1.1.1.3, 1.0.0.3";
     for (size_t i = 0; i < args.size(); ++i) {
@@ -178,6 +180,30 @@ static int cmd_install(const std::vector<std::string>& args) {
         }
         else if (a == "--no-curfew") { curfew = false; curfew_set = true; }
         else if (a == "--curfew") { curfew = true; curfew_set = true; }
+        else if ((a == "--curfew-time" || a == "--curfew-start") && next(v)) {
+            int h = 0, m = 0;
+            if (parse_time_hm(v, h, m)) {
+                curfew_start_h = h;
+                curfew_start_m = m;
+                curfew_start_set = true;
+                curfew = true;
+                curfew_set = true;
+            } else {
+                std::fprintf(stderr, "blocker: %s must be in HH:MM format (00:00..23:59)\n", a.c_str());
+                return 2;
+            }
+        }
+        else if (a == "--curfew-end" && next(v)) {
+            int h = 0, m = 0;
+            if (parse_time_hm(v, h, m)) {
+                curfew_end_h = h;
+                curfew_end_m = m;
+                curfew_end_set = true;
+            } else {
+                std::fprintf(stderr, "blocker: %s must be in HH:MM format (00:00..23:59)\n", a.c_str());
+                return 2;
+            }
+        }
         else if (a == "--no-ig-block") { ig_block = false; ig_block_set = true; }
         else if (a == "--ig-block") { ig_block = true; ig_block_set = true; }
         else { std::fprintf(stderr, "blocker: unknown or incomplete option '%s'\n", a.c_str()); return 2; }
@@ -205,7 +231,7 @@ static int cmd_install(const std::vector<std::string>& args) {
         if (path_exists(f)) protect::set_immutable(f, false);
 
     if (!path_exists(paths::conf())) {
-        if (!write_file_atomic(paths::conf(), default_config_text(mode, delay_h * 3600, window_m * 60, upstream, firewall, popup, popup_message, redirect, redirect_url), 0600)) {
+        if (!write_file_atomic(paths::conf(), default_config_text(mode, delay_h * 3600, window_m * 60, upstream, firewall, popup, popup_message, redirect, redirect_url, curfew, curfew_start_h, curfew_start_m, curfew_end_h, curfew_end_m), 0600)) {
             std::fprintf(stderr, "blocker: cannot write %s\n", paths::conf().c_str());
             return 1;
         }
@@ -229,6 +255,20 @@ static int cmd_install(const std::vector<std::string>& args) {
         if (curfew_set) {
             set_config_value(cur, "curfew", curfew ? "yes" : "no");
             notes.push_back(std::string("updated curfew settings (curfew = ") + (curfew ? "yes" : "no") + ")");
+            upgraded = true;
+        }
+        if (curfew_start_set) {
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%02d:%02d", curfew_start_h, curfew_start_m);
+            set_config_value(cur, "curfew_start", buf);
+            notes.push_back(std::string("updated curfew start time (curfew_start = ") + buf + ")");
+            upgraded = true;
+        }
+        if (curfew_end_set) {
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%02d:%02d", curfew_end_h, curfew_end_m);
+            set_config_value(cur, "curfew_end", buf);
+            notes.push_back(std::string("updated curfew end time (curfew_end = ") + buf + ")");
             upgraded = true;
         }
         if (ig_block_set) {
@@ -419,6 +459,32 @@ static int cmd_status() {
     return 0;
 }
 
+static int cmd_test_alert() {
+    Reply r;
+    std::string err;
+    if (control_call("TEST_ALERT\t", "", r, err, 5)) {
+        if (!r.ok) {
+            std::fprintf(stderr, "blocker: %s\n", r.text.c_str());
+            return 1;
+        }
+        std::printf("%s\n", r.text.c_str());
+        return 0;
+    }
+    // Daemon offline fallback: test directly using Popup class
+    std::vector<std::string> warn;
+    Config cfg = Config::load(paths::conf(), warn);
+    Popup popup(cfg);
+    std::printf("Testing desktop notification delivery (offline mode)...\n");
+    bool sent = popup.broadcast_alert("Blocker Alert Test", "Desktop notifications and night curfew alerts are working properly!", 10, false);
+    if (sent) {
+        std::printf("Notification successfully sent to active graphical session(s).\n");
+        return 0;
+    } else {
+        std::fprintf(stderr, "blocker: failed to deliver notification (no active graphical session found).\n");
+        return 1;
+    }
+}
+
 int main(int argc, char** argv) {
     std::vector<std::string> args(argv + 1, argv + argc);
     if (args.empty() || args[0] == "help" || args[0] == "--help" || args[0] == "-h") { usage(); return args.empty() ? 2 : 0; }
@@ -436,6 +502,7 @@ int main(int argc, char** argv) {
     if (cmd == "start") return cmd_start();
     if (cmd == "stop") return call("STOP", "");
     if (cmd == "status") return cmd_status();
+    if (cmd == "test-alert" || cmd == "test-popup") return cmd_test_alert();
     if (cmd == "list") return call("LIST", "", true);
     if (cmd == "unlock-request") return call("UNLOCK_REQUEST", "");
     if (cmd == "unlock-cancel") return call("UNLOCK_CANCEL", "", false);

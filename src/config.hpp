@@ -33,9 +33,11 @@ struct Config {
     bool firewall = true;           // nftables: only root (the daemon) may send plain DNS/DoT off-box
     bool browser_policies = true;   // managed policies: disable browser DoH, force SafeSearch
     bool block_instagram_explore = true; // block instagram.com/explore and search via browser policies
-    bool curfew = true;             // nightly curfew auto-shutdown (12:00 AM - 03:00 AM)
+    bool curfew = true;             // nightly curfew auto-shutdown
     int curfew_start_hour = 0;      // 00:00 (12:00 AM)
+    int curfew_start_min = 0;       // 00 minutes
     int curfew_end_hour = 3;        // 03:00 (03:00 AM)
+    int curfew_end_min = 0;         // 00 minutes
     int curfew_boot_grace_sec = 15; // seconds before shutdown if booted during curfew
     bool takeover_resolver = true;  // point /etc/resolv.conf at 127.0.0.1 and keep it there
     bool log_blocked = true;
@@ -78,6 +80,11 @@ std::string popup_config_block(bool popup, const std::string& popup_message = ""
 std::string default_config_text(LockMode mode, uint64_t delay_secs, uint64_t window_secs,
                                 const std::string& upstreams, bool firewall, bool popup = false,
                                 const std::string& popup_message = "", bool redirect = true,
-                                const std::string& redirect_url = "");
+                                const std::string& redirect_url = "", bool curfew = true,
+                                int curfew_start_h = 0, int curfew_start_m = 0,
+                                int curfew_end_h = 3, int curfew_end_m = 0);
+
+bool parse_time_hm(const std::string& str, int& hour, int& min);
+std::string format_time_hm(int hour, int min);
 
 }  // namespace blk

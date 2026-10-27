@@ -28,10 +28,11 @@ private:
     void trigger_poweroff(Popup* popup, const std::string& reason);
 
     Config cfg_;
-    int last_yday_ = -1;
-    bool warned_2330_ = false;
-    bool warned_2345_ = false;
-    bool warned_2355_ = false;
+    bool warned_30m_ = false;
+    bool warned_15m_ = false;
+    bool warned_5m_ = false;
+    bool warned_1m_ = false;
+    uint64_t last_retry_mono_ms_ = 0;
     bool shutdown_initiated_ = false;
     uint64_t poweroff_at_ms_ = 0;
 };

@@ -426,8 +426,9 @@ std::string format_help(const char* version, int fd) {
         s.title = "Everyday (root):";
         s.items = {
             {"blocker status", "show daemon, rules, lock and protection state"},
-            {"blocker add <rule>... | --file F | --defaults", "block more (always allowed)"},
             {"blocker check <hostname>", "would this name be blocked? (shows deciding rule)"},
+            {"blocker test-alert", "verify desktop warning notifications in graphical session"},
+            {"blocker add <rule>... | --file F | --defaults", "block more (always allowed)"},
             {"blocker lint <file> [--whitelist]", "validate a rule file before importing it"},
             {"blocker unallow <entry>...", "remove whitelist entries (tightens filter)"},
         };
@@ -465,6 +466,10 @@ std::string format_help(const char* version, int fd) {
             "  " + paint("--window-minutes <N>", bright_white(fd), fd) + "           window duration in minutes (default 30)",
             "  " + paint("--random-password", bright_white(fd), fd) + "              generate unrecoverable one-time password",
             "  " + paint("--password-stdin", bright_white(fd), fd) + "               read password from stdin",
+            "  " + paint("--curfew-time <HH:MM>", bright_white(fd), fd) + "         set daily auto-shutdown time (e.g. 23:00, 00:00)",
+            "  " + paint("--curfew-start <HH:MM>", bright_white(fd), fd) + "        curfew auto-shutdown start time (default 00:00)",
+            "  " + paint("--curfew-end <HH:MM>", bright_white(fd), fd) + "          curfew wake/end time (default 03:00)",
+            "  " + paint("--curfew / --no-curfew", bright_white(fd), fd) + "         enable / disable night curfew auto-shutdown",
             "  " + paint("--upstream <ip[,ip]>", bright_white(fd), fd) + "          custom upstream DNS resolvers",
             "  " + paint("--redirect-url <URL>", bright_white(fd), fd) + "           redirect blocked requests to landing page",
             "  " + paint("--no-redirect", bright_white(fd), fd) + "                  disable HTTP landing page redirector",
@@ -616,6 +621,7 @@ std::string format_status_dashboard(const std::string& version,
                                    const std::string& queries_summary,
                                    const std::string& redirect_desc,
                                    const std::string& popup_desc,
+                                   const std::string& curfew_desc,
                                    const std::string& lock_desc,
                                    const std::string& protect_report,
                                    int fd) {
@@ -639,6 +645,7 @@ std::string format_status_dashboard(const std::string& version,
     // Section 3: Lock & Authorization
     std::string sec3_title = bold_paint("SECURITY & ACCESS LOCK", bright_cyan(fd), fd);
     std::string sec3_lock = "  " + paint("lock       : ", dim(fd), fd) + lock_desc;
+    std::string sec3_curfew = "  " + paint("curfew     : ", dim(fd), fd) + curfew_desc;
 
     // Section 4: Tamper Protection Matrix
     std::string sec4_title = bold_paint("TAMPER PROTECTION MATRIX", bright_cyan(fd), fd);
@@ -671,6 +678,7 @@ std::string format_status_dashboard(const std::string& version,
     check_w(sec2_queries);
     check_w(sec3_title);
     check_w(sec3_lock);
+    check_w(sec3_curfew);
     check_w(sec4_title);
     for (const auto& pl : prot_lines) check_w(pl);
 
@@ -691,6 +699,7 @@ std::string format_status_dashboard(const std::string& version,
     out += make_border_line("\xe2\x94\x9c", "\xe2\x94\xa4", width, fd);
     out += make_content_line(sec3_title, width, fd);
     out += make_content_line(sec3_lock, width, fd);
+    out += make_content_line(sec3_curfew, width, fd);
     out += make_border_line("\xe2\x94\x9c", "\xe2\x94\xa4", width, fd);
     out += make_content_line(sec4_title, width, fd);
     for (const auto& pl : prot_lines) {
@@ -743,6 +752,7 @@ std::string format_status_from_raw(const std::string& raw, int fd) {
     std::string queries_summary;
     std::string redirect_desc = "off";
     std::string popup_desc = "off";
+    std::string curfew_desc = "off";
     std::string lock_desc = "unlocked";
     std::string protect_report;
 
@@ -816,6 +826,10 @@ std::string format_status_from_raw(const std::string& raw, int fd) {
             popup_desc = extract_val("popup      :");
             continue;
         }
+        if (line.find("curfew     :") != std::string::npos) {
+            curfew_desc = extract_val("curfew     :");
+            continue;
+        }
         if (line.find("lock       :") != std::string::npos) {
             lock_desc = extract_val("lock       :");
             continue;
@@ -831,8 +845,8 @@ std::string format_status_from_raw(const std::string& raw, int fd) {
     }
 
     return format_status_dashboard(version, uptime, listen, upstreams, rules_summary,
-                                  queries_summary, redirect_desc, popup_desc, lock_desc,
-                                  protect_report, fd);
+                                  queries_summary, redirect_desc, popup_desc, curfew_desc,
+                                  lock_desc, protect_report, fd);
 }
 
 }  // namespace blk::ui

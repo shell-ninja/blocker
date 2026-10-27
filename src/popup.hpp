@@ -45,7 +45,9 @@ public:
     bool enabled() const { return cfg_.popup; }
     // Called from DNS threads: must stay cheap. client_port = UDP source port of the query (0 = unknown).
     void notify_blocked(const std::string& host, uint16_t client_port);
-    void broadcast_alert(const std::string& title, const std::string& message, int expire_secs, bool urgent = false);
+    // Broadcasts an alert message to all logged-in graphical user sessions and open terminals.
+    // Returns true if at least one graphical user session was found and notified.
+    bool broadcast_alert(const std::string& title, const std::string& message, int expire_secs, bool urgent = false);
     std::string describe();
 
 private:

@@ -53,7 +53,13 @@ std::string ControlServer::status_text() {
          ", safesearch " + std::to_string(st.safesearch.load()) + ", upstream failures " + std::to_string(st.failed.load()) + "\n";
     s += "  redirect   : " + (c_.redirect ? c_.redirect->describe() : std::string("off")) + "\n";
     s += "  popup      : " + (c_.popup ? c_.popup->describe() : std::string("off")) + "\n";
-    s += "  curfew     : " + (c_.cfg.curfew ? std::string("enabled (12:00 AM - 03:00 AM auto-shutdown)") : std::string("off")) + "\n";
+    if (c_.cfg.curfew) {
+        std::string s_time = format_time_hm(c_.cfg.curfew_start_hour, c_.cfg.curfew_start_min);
+        std::string e_time = format_time_hm(c_.cfg.curfew_end_hour, c_.cfg.curfew_end_min);
+        s += "  curfew     : enabled (" + s_time + " - " + e_time + " auto-shutdown)\n";
+    } else {
+        s += "  curfew     : off\n";
+    }
     s += "  ig-explore : " + (c_.cfg.block_instagram_explore ? std::string("blocked (browser policies)") : std::string("allowed")) + "\n";
     s += "  lock       : " + c_.lock->describe() + "\n";
     s += "  protection :\n" + protect::report(c_.cfg);
@@ -69,6 +75,11 @@ Reply ControlServer::handle(const std::string& req, int& exit_code) {
 
     if (cmd == "PING") return okay("pong");
     if (cmd == "STATUS") return okay(status_text());
+    if (cmd == "TEST_ALERT") {
+        if (!c_.popup) return fail("popup module inactive");
+        bool sent = c_.popup->broadcast_alert("Blocker Alert Test", "Desktop notifications and night curfew alerts are working properly!", 10, false);
+        return sent ? okay("notification sent to active graphical session(s)") : fail("no active graphical desktop session found (check $WAYLAND_DISPLAY / $DISPLAY)");
+    }
     if (cmd == "LIST") {
         // The rule list is hidden: seeing it needs the same authorisation as loosening it (see hide_rules).
         if (c_.cfg.hide_rules) {

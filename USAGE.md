@@ -87,6 +87,10 @@ Useful options:
 | `--no-firewall` | skip the nftables DNS-bypass rules |
 | `--redirect-url URL` | where blocked sites send the browser (default `https://youtu.be/z7f0ADlstfo?autoplay=1`) |
 | `--no-redirect` | plain blocking (`0.0.0.0`), no redirect server |
+| `--curfew-time HH:MM` | set auto-shutdown curfew time (e.g. `23:30` or `00:00`, default `00:00`) |
+| `--curfew-start HH:MM` | alias for `--curfew-time` |
+| `--curfew-end HH:MM` | set curfew wake/end time (e.g. `05:00`, default `03:00`) |
+| `--curfew / --no-curfew` | enable or disable night curfew auto-shutdown |
 | `--popup` | also show the blocked-site popup (off by default) |
 | `--popup-message TEXT` | the popup text (`\n` = new line, `{host}` = blocked name; no `#`) |
 
@@ -346,6 +350,9 @@ Configuration (`/etc/blocker/blocker.conf`, read at start; immutable — change 
 | `redirect` | `yes` | blocked names → loopback + local redirect server (see [redirect](#the-landing-page-redirect)) |
 | `redirect_url` | `https://youtu.be/z7f0ADlstfo?autoplay=1` | the landing page |
 | `redirect_port` | `80` | redirect server port (only ever changed by the test-suite) |
+| `curfew` | `yes` | enable auto-shutdown at night and prevent usage during curfew |
+| `curfew_start` | `00:00` | auto-shutdown time in `HH:MM` format (or `HH`) |
+| `curfew_end` | `03:00` | curfew wake/end time in `HH:MM` format (or `HH`) |
 | `hide_rules` | `yes` | `blocker list` needs authorisation; the journal does not print the matching rule |
 | `popup`, `popup_title`, `popup_message`, `popup_seconds`, `popup_cooldown`, `popup_helper` | `no`, … | optional [blocked-site popup](#the-blocked-site-popup-optional) |
 | `lock_mode`, `unlock_delay`, `unlock_window` | `both`, `86400`, `1800` | see section 5 |
@@ -535,6 +542,26 @@ GNOME ignores the 5-second timeout for those — prefer `zenity`.)
 * The unit file therefore does **not** use `PrivateTmp`, `ProtectHome`, `RestrictNamespaces` or
   `MemoryDenyWriteExecute`: the helper inherits the daemon's sandbox and needs the real `/tmp` (X11), `/run/user`,
   and a toolkit that may JIT.
+
+## Night Curfew & Auto-Shutdown
+
+Blocker includes a built-in PC curfew mechanism to enforce healthy sleep boundaries:
+
+* **Auto-Shutdown at Configured Time**: Automatically shuts down the computer at `curfew_start` (e.g. `23:30` or `00:00`).
+* **Anti-Wake Lock**: If the computer is turned on during the curfew window (between `curfew_start` and `curfew_end`, e.g. `00:00` to `03:00`), the daemon triggers an immediate clean shutdown after logging a curfew enforcement event.
+* **Dynamic 30-Minute Countdown Notifications**:
+  Starting exactly 30 minutes before your scheduled auto-shutdown, Blocker issues warnings to give you ample time to save your work:
+  * **30 minutes remaining**: Notification warning you of the scheduled auto-shutdown time.
+  * **15 minutes remaining**: Mid-point countdown notification.
+  * **5 minutes remaining**: Urgent reminder to finish tasks and save unsaved work.
+  * **1 minute remaining**: Final critical warning before system poweroff.
+* **Modern Desktop & Wayland Integration**:
+  * Scans both `/proc` and `/run/user/<uid>` for active user graphical sessions across Wayland (`WAYLAND_DISPLAY`, Hyprland, Sway), X11 (`DISPLAY`), and D-Bus (`DBUS_SESSION_BUS_ADDRESS`).
+  * Compatible with desktop notification daemons including Quickshell, Mako, Dunst, SwayNC, GNOME, and KDE.
+  * When running as root under systemd, dispatches alerts through `systemd-run --user` directly into the logged-in user's PAM session environment.
+  * If no graphical user session is logged in when a warning threshold is reached (e.g. boot timing or screen lock), Blocker continuously retries every 5 seconds until the user logs in, ensuring the alert is delivered immediately upon login.
+* **Testing Alert Delivery**:
+  Run `blocker test-alert` from any terminal to send a test notification to your desktop and verify that your compositor and notification daemon receive alerts properly.
 
 ## What DNS cannot see
 

@@ -10,8 +10,9 @@
 #                                       needs the unlock password / an open unlock window)
 #
 # Options handled here:   -y/--yes  --build-only  --install-deps  --upgrade  --dry-run  -h/--help
-# Everything else is passed to `blocker install` (--mode, --delay-hours, --window-minutes, --redirect-url URL,
-# --no-redirect, --popup, --popup-message TEXT, ( not available for now )
+# Everything else is passed to `blocker install` (--mode, --delay-hours, --window-minutes,
+# --curfew-time HH:MM, --curfew-start HH:MM, --curfew-end HH:MM, --curfew / --no-curfew,
+# --redirect-url URL, --no-redirect, --popup, --popup-message TEXT,
 # --random-password, --password-stdin, --upstream, --no-firewall).
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
@@ -263,6 +264,24 @@ fi
 
 if [ "$YES" = 0 ] && [ "$DRY" = 0 ]; then
   [ -t 0 ] || die "non-interactive session detected: pass --yes to confirm installation"
+  if [ "$UPGRADE" = 0 ] && ! has_arg --curfew && ! has_arg --no-curfew && ! has_arg --curfew-time && ! has_arg --curfew-start; then
+    printf "\n"
+    printf " ${C_CYAN}│${C_RESET}  ${C_BOLD}Night Curfew & Auto-Shutdown Configuration:${C_RESET}\n"
+    printf " ${C_CYAN}│${C_RESET}  ${C_MUTED}Automatically powers off PC to enforce sleep, sending warning notifications 30m before.${C_RESET}\n"
+    read -r -p "  Enable Night Curfew auto-shutdown? [Y/n] " ans_curfew
+    case "$ans_curfew" in
+      n|N|no|NO)
+        INSTALL_ARGS+=(--no-curfew)
+        ;;
+      *)
+        read -r -p "  Auto-shutdown time (HH:MM in 24h format, e.g. 23:00, 00:00) [00:00]: " ans_time
+        ans_time=${ans_time:-00:00}
+        read -r -p "  Curfew wake / end time (HH:MM in 24h format, e.g. 03:00, 06:00) [03:00]: " ans_end
+        ans_end=${ans_end:-03:00}
+        INSTALL_ARGS+=(--curfew-start "$ans_time" --curfew-end "$ans_end")
+        ;;
+    esac
+  fi
   printf "\n"
   read -r -p "  Proceed with installation? [y/N] " ans
   case "$ans" in
@@ -327,6 +346,12 @@ else
   else
     status_warn "example.com resolution failed. Check: sudo journalctl -u blocker -n 50"
   fi
+
+  if as_root /usr/local/sbin/blocker test-alert >/dev/null 2>&1; then
+    status_ok "Desktop warning notifications verified active"
+  else
+    status_info "Desktop notification helper ready (run 'sudo blocker test-alert' to test)"
+  fi
 fi
 
 sleep 1
@@ -339,6 +364,7 @@ printf "${C_GREEN}├───────────────────�
 printf "${C_GREEN}│${C_RESET}  ${C_BOLD}Essential Commands (run with sudo):${C_RESET}                                         ${C_GREEN}│${C_RESET}\n"
 printf "${C_GREEN}│${C_RESET}    ${C_CYAN}blocker status${C_RESET}           Daemon, counters, lock and defense health        ${C_GREEN}│${C_RESET}\n"
 printf "${C_GREEN}│${C_RESET}    ${C_CYAN}blocker check <hostname>${C_RESET} Test if a host is blocked & see deciding rule   ${C_GREEN}│${C_RESET}\n"
+printf "${C_GREEN}│${C_RESET}    ${C_CYAN}blocker test-alert${C_RESET}       Verify desktop warning notifications in GUI      ${C_GREEN}│${C_RESET}\n"
 printf "${C_GREEN}│${C_RESET}    ${C_CYAN}blocker add <rule>...${C_RESET}    Add rules (never requires password or delay)     ${C_GREEN}│${C_RESET}\n"
 printf "${C_GREEN}│${C_RESET}    ${C_CYAN}blocker unlock-request${C_RESET}   Begin delayed unlock period to edit rules        ${C_GREEN}│${C_RESET}\n"
 printf "${C_GREEN}│${C_RESET}    ${C_CYAN}journalctl -u blocker -f${C_RESET} Live query and filter activity log              ${C_GREEN}│${C_RESET}\n"
