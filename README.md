@@ -97,7 +97,7 @@ sudo blocker list                        # show all current rules (needs unlock)
 ./setup.sh --upgrade
 ```
 
-This stops the running daemon (needs the unlock password/window), installs the new binary, and keeps your password, config, and rules.
+This stops the running daemon immediately (without waiting for the unlock countdown or window), installs the new binary, and keeps your password, config, and rules.
 
 ## Uninstall
 

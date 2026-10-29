@@ -32,7 +32,6 @@ private:
     bool warned_15m_ = false;
     bool warned_5m_ = false;
     bool warned_1m_ = false;
-    uint64_t last_retry_mono_ms_ = 0;
     bool shutdown_initiated_ = false;
     uint64_t poweroff_at_ms_ = 0;
 };

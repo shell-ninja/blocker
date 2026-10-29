@@ -58,7 +58,7 @@ confirmation, installs with `sudo`, and verifies that blocking works:
 ./setup.sh --build-only                      # compile, install nothing
 ./setup.sh --dry-run                         # show what would happen
 ./setup.sh --install-deps                    # apt/dnf/pacman/zypper: fetch g++, make, nftables first
-./setup.sh --upgrade                         # replace an existing install (needs the unlock password/window)
+./setup.sh --upgrade                         # replace an existing install immediately without waiting
 ```
 
 Any option it doesn't handle itself (`--mode`, `--delay-hours`, `--window-minutes`, `--random-password`,
@@ -123,9 +123,8 @@ tells you so. To replace it with a newer build:
 ./setup.sh --upgrade
 ```
 
-The installed blocker is asked to **stop, which is protected like any other loosening**: it needs the unlock
-password and, in `delay`/`both` mode, an open unlock window (`sudo blocker unlock-request`, wait `unlock_delay`,
-then upgrade inside the window). Then the new binary is installed and started, and:
+Upgrades take effect **immediately without waiting for the unlock countdown or window**. The running
+blocker service is safely stopped and replaced with the new build as root, and:
 
 * your **password, `blocker.conf` and rules are kept** (options such as `--mode` or `--delay-hours` do not change
   them); a config from an older version gets the missing blocks appended — the **redirect** settings (landing page
@@ -559,7 +558,7 @@ Blocker includes a built-in PC curfew mechanism to enforce healthy sleep boundar
   * Scans both `/proc` and `/run/user/<uid>` for active user graphical sessions across Wayland (`WAYLAND_DISPLAY`, Hyprland, Sway), X11 (`DISPLAY`), and D-Bus (`DBUS_SESSION_BUS_ADDRESS`).
   * Compatible with desktop notification daemons including Quickshell, Mako, Dunst, SwayNC, GNOME, and KDE.
   * When running as root under systemd, dispatches alerts through `systemd-run --user` directly into the logged-in user's PAM session environment.
-  * If no graphical user session is logged in when a warning threshold is reached (e.g. boot timing or screen lock), Blocker continuously retries every 5 seconds until the user logs in, ensuring the alert is delivered immediately upon login.
+  * Broadcasts alerts via terminal `wall` and desktop notifications at each countdown timestamp, without spamming repeated alerts.
 * **Testing Alert Delivery**:
   Run `blocker test-alert` from any terminal to send a test notification to your desktop and verify that your compositor and notification daemon receive alerts properly.
 

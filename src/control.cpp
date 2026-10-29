@@ -177,6 +177,13 @@ Reply ControlServer::handle(const std::string& req, int& exit_code) {
         return okay(uninstall ? "blocker uninstalled; DNS settings restored"
                               : "blocker stopped and protections lifted; run 'blocker start' (or reboot) to re-arm");
     }
+
+    if (cmd == "UPGRADE") {
+        LOG_W("authorised upgrade requested");
+        protect::disarm(c_.cfg, false);
+        exit_code = 42;  // RestartPreventExitStatus=42 in the unit
+        return okay("blocker stopped for upgrade");
+    }
     return fail("unknown command: " + cmd);
 }
 

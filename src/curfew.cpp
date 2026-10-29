@@ -58,6 +58,7 @@ void Curfew::tick(Popup* popup) {
             }
         }
         if (poweroff_at_ms_ > 0 && mono_ms() >= poweroff_at_ms_) {
+            poweroff_at_ms_ = 0;
             trigger_poweroff(popup, "curfew window active");
         }
         return;
@@ -71,7 +72,7 @@ void Curfew::tick(Popup* popup) {
     int mins_until = (start_m - now_m + 1440) % 1440;
 
     // Outside 30-minute pre-shutdown countdown window: reset warning flags
-    if (mins_until > 35) {
+    if (mins_until > 30) {
         warned_30m_ = false;
         warned_15m_ = false;
         warned_5m_ = false;
@@ -80,65 +81,54 @@ void Curfew::tick(Popup* popup) {
     }
 
     std::string target_time = format_time_hm(cfg_.curfew_start_hour, cfg_.curfew_start_min);
-    uint64_t now_mono = mono_ms();
-    // Retry interval: if a warning was not successfully delivered yet (e.g. desktop session was still loading), retry every 5s
-    bool retry_due = (now_mono - last_retry_mono_ms_ >= 5000);
 
     // Stage 1: 30 minutes remaining (between 16 and 30 minutes remaining)
-    if (mins_until <= 30 && mins_until > 15 && (!warned_30m_ || retry_due)) {
-        if (!warned_30m_) LOG_I("curfew: sending 30-minute reminder for auto-shutdown at %s", target_time.c_str());
-        bool delivered = false;
+    if (mins_until <= 30 && mins_until > 15 && !warned_30m_) {
+        warned_30m_ = true;
+        LOG_I("curfew: sending 30-minute reminder for auto-shutdown at %s", target_time.c_str());
         if (popup) {
-            delivered = popup->broadcast_alert(
+            popup->broadcast_alert(
                 "Blocker: Bedtime Reminder",
                 "Night Curfew begins in " + std::to_string(mins_until) + " minutes (at " + target_time + ").\n"
                 "Please start wrapping up your activities.",
                 15, false);
         }
-        if (delivered) warned_30m_ = true;
-        last_retry_mono_ms_ = now_mono;
     }
     // Stage 2: 15 minutes remaining (between 6 and 15 minutes remaining)
-    else if (mins_until <= 15 && mins_until > 5 && (!warned_15m_ || retry_due)) {
-        if (!warned_15m_) LOG_I("curfew: sending 15-minute warning for auto-shutdown at %s", target_time.c_str());
-        bool delivered = false;
+    else if (mins_until <= 15 && mins_until > 5 && !warned_15m_) {
+        warned_15m_ = true;
+        LOG_I("curfew: sending 15-minute warning for auto-shutdown at %s", target_time.c_str());
         if (popup) {
-            delivered = popup->broadcast_alert(
+            popup->broadcast_alert(
                 "Blocker: Bedtime Warning",
                 "Night Curfew begins in " + std::to_string(mins_until) + " minutes (at " + target_time + ").\n"
                 "Please wrap up and close your applications.",
                 15, false);
         }
-        if (delivered) warned_15m_ = true;
-        last_retry_mono_ms_ = now_mono;
     }
     // Stage 3: 5 minutes remaining (between 2 and 5 minutes remaining)
-    else if (mins_until <= 5 && mins_until > 1 && (!warned_5m_ || retry_due)) {
-        if (!warned_5m_) LOG_W("curfew: sending 5-minute final warning for auto-shutdown at %s", target_time.c_str());
-        bool delivered = false;
+    else if (mins_until <= 5 && mins_until > 1 && !warned_5m_) {
+        warned_5m_ = true;
+        LOG_W("curfew: sending 5-minute final warning for auto-shutdown at %s", target_time.c_str());
         if (popup) {
-            delivered = popup->broadcast_alert(
+            popup->broadcast_alert(
                 "Blocker: FINAL WARNING",
                 "FINAL WARNING: PC will automatically shut down in " + std::to_string(mins_until) + " minutes at " + target_time + "!\n"
                 "Save all your work and open projects immediately.",
                 30, true);
         }
-        if (delivered) warned_5m_ = true;
-        last_retry_mono_ms_ = now_mono;
     }
     // Stage 4: 1 minute remaining (urgent final countdown)
-    else if (mins_until <= 1 && mins_until > 0 && (!warned_1m_ || retry_due)) {
-        if (!warned_1m_) LOG_W("curfew: sending 1-minute shutdown imminent alert for auto-shutdown at %s", target_time.c_str());
-        bool delivered = false;
+    else if (mins_until <= 1 && mins_until > 0 && !warned_1m_) {
+        warned_1m_ = true;
+        LOG_W("curfew: sending 1-minute shutdown imminent alert for auto-shutdown at %s", target_time.c_str());
         if (popup) {
-            delivered = popup->broadcast_alert(
+            popup->broadcast_alert(
                 "Blocker: SHUTDOWN IMMINENT",
                 "CRITICAL: PC is shutting down in 1 minute (at " + target_time + ")!\n"
                 "Save all work and close open files NOW.",
                 30, true);
         }
-        if (delivered) warned_1m_ = true;
-        last_retry_mono_ms_ = now_mono;
     }
 }
 

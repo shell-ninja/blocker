@@ -142,6 +142,7 @@ static int cmd_install(const std::vector<std::string>& args) {
     bool random_pw = false, pw_stdin = false, firewall = true, popup = false, redirect = true;
     bool popup_set = false, popup_msg_set = false, redirect_set = false, redirect_url_set = false;
     bool curfew = true, curfew_set = false, ig_block = true, ig_block_set = false;
+    bool upgrade = false;
     int curfew_start_h = 0, curfew_start_m = 0, curfew_end_h = 3, curfew_end_m = 0;
     bool curfew_start_set = false, curfew_end_set = false;
     std::string popup_message, redirect_url;
@@ -150,7 +151,9 @@ static int cmd_install(const std::vector<std::string>& args) {
         const std::string& a = args[i];
         auto next = [&](std::string& out) { if (i + 1 >= args.size()) return false; out = args[++i]; return true; };
         std::string v;
-        if (a == "--mode" && next(v)) { if (!parse_lock_mode(v, mode)) { std::fprintf(stderr, "blocker: --mode must be password, delay or both\n"); return 2; } }
+        if (a == "--") continue;
+        else if (a == "--upgrade") upgrade = true;
+        else if (a == "--mode" && next(v)) { if (!parse_lock_mode(v, mode)) { std::fprintf(stderr, "blocker: --mode must be password, delay or both\n"); return 2; } }
         else if (a == "--delay-hours" && next(v)) { if (!parse_u64(v, delay_h) || delay_h == 0) { std::fprintf(stderr, "blocker: bad --delay-hours\n"); return 2; } }
         else if (a == "--window-minutes" && next(v)) { if (!parse_u64(v, window_m) || window_m == 0) { std::fprintf(stderr, "blocker: bad --window-minutes\n"); return 2; } }
         else if (a == "--upstream" && next(v)) upstream = v;
@@ -217,8 +220,40 @@ static int cmd_install(const std::vector<std::string>& args) {
     Reply r;
     std::string err;
     if (control_call("PING", "", r, err, 2) && r.ok) {
-        std::fprintf(stderr, "blocker is already installed and running. Use 'blocker stop' (authorised) before reinstalling.\n");
-        return 1;
+        if (upgrade) {
+            std::printf("blocker is currently running; requesting upgrade stop...\n");
+            control_call("UPGRADE", "", r, err, 5);
+            for (int i = 0; i < 10; ++i) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                if (!control_call("PING", "", r, err, 1) || !r.ok) break;
+            }
+            if (control_call("PING", "", r, err, 1) && r.ok) {
+                std::printf("stopping blocker service for immediate upgrade...\n");
+                protect::sysctl({"stop", "blocker-guard.timer"});
+                make_dirs(paths::state_dir(), 0700);
+                write_file_atomic(paths::disabled_flag(), "paused\n", 0600);
+                std::string unit_path = paths::unit_dir() + "/blocker.service";
+                protect::set_immutable(unit_path, false);
+                std::string unit_content;
+                if (read_file(unit_path, unit_content)) {
+                    size_t pos = unit_content.find("RefuseManualStop=yes");
+                    if (pos != std::string::npos) {
+                        unit_content.erase(pos, std::string("RefuseManualStop=yes\n").length());
+                        write_file_atomic(unit_path, unit_content, 0644);
+                        protect::sysctl({"daemon-reload"});
+                    }
+                }
+                protect::sysctl({"stop", "blocker.service"});
+                for (int i = 0; i < 10; ++i) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                    if (!control_call("PING", "", r, err, 1) || !r.ok) break;
+                }
+            }
+        }
+        if (control_call("PING", "", r, err, 2) && r.ok) {
+            std::fprintf(stderr, "blocker is already installed and running. Use 'blocker stop' (authorised) before reinstalling.\n");
+            return 1;
+        }
     }
 
     make_dirs(paths::etc_dir(), 0700);
@@ -500,7 +535,11 @@ int main(int argc, char** argv) {
     if (cmd == "install") return cmd_install(args);
     if (cmd == "uninstall") return cmd_uninstall();
     if (cmd == "start") return cmd_start();
-    if (cmd == "stop") return call("STOP", "");
+    if (cmd == "upgrade") return call("UPGRADE", "");
+    if (cmd == "stop") {
+        if (!args.empty() && args[0] == "--upgrade") return call("UPGRADE", "");
+        return call("STOP", "");
+    }
     if (cmd == "status") return cmd_status();
     if (cmd == "test-alert" || cmd == "test-popup") return cmd_test_alert();
     if (cmd == "list") return call("LIST", "", true);

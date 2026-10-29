@@ -6,8 +6,7 @@
 #   ./setup.sh --yes --random-password --delay-hours 72
 #   ./setup.sh --build-only             just build; touch nothing
 #   ./setup.sh --dry-run                print what would happen
-#   ./setup.sh --upgrade                replace an existing install (asks the running blocker to stop:
-#                                       needs the unlock password / an open unlock window)
+#   ./setup.sh --upgrade                replace an existing install immediately (preserves config & rules)
 #
 # Options handled here:   -y/--yes  --build-only  --install-deps  --upgrade  --dry-run  -h/--help
 # Everything else is passed to `blocker install` (--mode, --delay-hours, --window-minutes,
@@ -239,9 +238,7 @@ fi
 # ------------------------------------------------------------------ 3. confirm
 step "3/4" "Security Configuration & Confirmation"
 
-if [ "$UPGRADE" = 1 ]; then
-  [ -t 0 ] || fail "an upgrade requires a terminal: the running blocker prompts for the unlock password"
-elif [ ! -t 0 ] && ! has_arg --random-password && ! has_arg --password-stdin && ! { has_arg --mode && has_arg delay; }; then
+if [ "$UPGRADE" = 0 ] && [ ! -t 0 ] && ! has_arg --random-password && ! has_arg --password-stdin && ! { has_arg --mode && has_arg delay; }; then
   fail "no interactive terminal: pass --random-password or --password-stdin to configure without prompts"
 fi
 
@@ -294,14 +291,44 @@ fi
 step "4/4" "Installation & System Integration"
 
 if [ "$UPGRADE" = 1 ]; then
-  say "Stopping currently running blocker (authorisation required)..."
-  if ! run as_root /usr/local/sbin/blocker stop; then
-    die "installed blocker refused stop request. Run 'sudo blocker unlock-request', wait for window, then upgrade."
+  say "Stopping currently running blocker for immediate upgrade..."
+  stopped=0
+  if [ -x /usr/local/sbin/blocker ]; then
+    if run as_root /usr/local/sbin/blocker stop --upgrade >/dev/null 2>&1 || \
+       run as_root /usr/local/sbin/blocker upgrade >/dev/null 2>&1; then
+      stopped=1
+    fi
+  fi
+  if [ "$stopped" = 0 ]; then
+    if [ "$DRY" = 0 ]; then
+      as_root systemctl stop blocker-guard.timer 2>/dev/null || true
+      as_root mkdir -p /var/lib/blocker
+      echo "paused" | as_root tee /var/lib/blocker/disabled >/dev/null
+
+      b_pid=$(systemctl show -p MainPID --value blocker.service 2>/dev/null || true)
+      if [ -n "$b_pid" ] && [ "$b_pid" -gt 0 ] && kill -0 "$b_pid" 2>/dev/null; then
+        as_root kill -STOP "$b_pid" 2>/dev/null || true
+      fi
+
+      as_root chattr -i /etc/systemd/system/blocker.service 2>/dev/null || true
+      as_root sed -i '/RefuseManualStop/d' /etc/systemd/system/blocker.service 2>/dev/null || true
+      as_root systemctl daemon-reload 2>/dev/null || true
+      as_root systemctl stop blocker.service 2>/dev/null || true
+
+      if [ -n "$b_pid" ] && [ "$b_pid" -gt 0 ] && kill -0 "$b_pid" 2>/dev/null; then
+        as_root kill -KILL "$b_pid" 2>/dev/null || true
+      fi
+
+      as_root chattr -i /usr/local/sbin/blocker 2>/dev/null || true
+      as_root chattr -i /etc/blocker/blocker.conf 2>/dev/null || true
+      as_root chattr -i /etc/systemd/system/blocker* 2>/dev/null || true
+      as_root chattr -i /etc/systemd/system/blocker*.d 2>/dev/null || true
+    fi
   fi
   if [ "$DRY" = 0 ]; then
     for _ in $(seq 1 20); do systemctl is-active --quiet blocker.service 2>/dev/null || break; sleep 1; done
   fi
-  run_with_spinner "Installing updated binaries and systemd units" run as_root ./build/blocker install -- ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}
+  run_with_spinner "Installing updated binaries and systemd units" run as_root ./build/blocker install --upgrade ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}
   if [ "$DRY" = 0 ]; then
     for _ in $(seq 1 20); do as_root /usr/local/sbin/blocker status >/dev/null 2>&1 && break; sleep 1; done
   fi
