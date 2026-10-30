@@ -108,6 +108,16 @@ die()  { printf "\n${C_RED}✖ error:${C_RESET} %s\n\n" "$*" >&2; exit 1; }
 fail() { if [ "$DRY" = 1 ]; then warn "$* (would abort)"; else die "$*"; fi; }
 run()  { if [ "$DRY" = 1 ]; then echo "+ $*"; else "$@"; fi; }
 as_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }
+# Run as the real (non-root) user - needed for Brave CRX packing
+# (Brave refuses to run as root; drop back to the invoking user when called via sudo)
+run_as_user() {
+  local real_user="${SUDO_USER:-$(logname 2>/dev/null || id -un)}"
+  if [ "$(id -u)" -eq 0 ] && [ -n "$real_user" ] && [ "$real_user" != "root" ]; then
+    sudo -u "$real_user" "$@"
+  else
+    "$@"
+  fi
+}
 have() { command -v "$1" >/dev/null 2>&1; }
 
 YES=0 BUILD_ONLY=0 DRY=0 DEPS=0 UPGRADE=0
@@ -381,7 +391,7 @@ if [ "$DRY" = 0 ]; then
     as_root cp "$SHIELD_KEY" "$TMP_PACK/shield.pem"
     as_root chmod 600 "$SHIELD_KEY"  # restore strict perms immediately
     chmod 644 "$TMP_PACK/shield.pem"
-    "$BRAVE_BIN" --headless=new --no-sandbox --disable-gpu \
+    run_as_user "$BRAVE_BIN" --headless=new --no-sandbox --disable-gpu \
       --pack-extension="$TMP_PACK/shield" \
       --pack-extension-key="$TMP_PACK/shield.pem" \
       2>/dev/null || true
@@ -393,7 +403,7 @@ if [ "$DRY" = 0 ]; then
       status_warn "Brave CRX pack failed - trying chromium fallback..."
       for b2 in /usr/bin/chromium /usr/bin/chromium-browser /usr/bin/google-chrome; do
         if [ -x "$b2" ]; then
-          "$b2" --headless=new --no-sandbox --disable-gpu \
+          run_as_user "$b2" --headless=new --no-sandbox --disable-gpu \
             --pack-extension="$TMP_PACK/shield" \
             --pack-extension-key="$TMP_PACK/shield.pem" \
             2>/dev/null || true
