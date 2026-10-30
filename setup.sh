@@ -384,13 +384,17 @@ if [ "$DRY" = 0 ]; then
     status_info "Packing shield.crx..."
     as_root chattr -i /usr/share/blocker/shield/* 2>/dev/null || true
     TMP_PACK=$(mktemp -d)
+    as_root chmod 755 "$TMP_PACK"
     as_root cp -r /usr/share/blocker/shield "$TMP_PACK/shield"
     as_root chmod -R a+rX "$TMP_PACK/shield"
-    # Temporarily make PEM readable so Brave (running as user) can read it
     as_root chmod 644 "$SHIELD_KEY"
     as_root cp "$SHIELD_KEY" "$TMP_PACK/shield.pem"
-    as_root chmod 600 "$SHIELD_KEY"  # restore strict perms immediately
-    chmod 644 "$TMP_PACK/shield.pem"
+    as_root chmod 600 "$SHIELD_KEY"
+    as_root chmod 644 "$TMP_PACK/shield.pem"
+    real_user="${SUDO_USER:-$(logname 2>/dev/null || id -un)}"
+    if [ -n "$real_user" ] && [ "$real_user" != "root" ]; then
+      as_root chown -R "$real_user" "$TMP_PACK"
+    fi
     run_as_user "$BRAVE_BIN" --headless=new --no-sandbox --disable-gpu \
       --pack-extension="$TMP_PACK/shield" \
       --pack-extension-key="$TMP_PACK/shield.pem" \
@@ -477,7 +481,37 @@ SVCEOF
     status_warn "blocker-crxserve not running - check: journalctl -u blocker-crxserve"
   fi
 
-  # ---- 6. Remove --load-extension if policy is active, else keep as fallback ----
+  # ---- 6. Inject ExtensionInstallForcelist into browser policies ----
+  if [ -n "${SHIELD_EXT_ID:-}" ]; then
+    for POLICY_DIR in \
+        /etc/brave/policies/managed \
+        /etc/brave-browser/policies/managed \
+        /etc/brave-origin/policies/managed \
+        /etc/chromium/policies/managed \
+        /etc/opt/chrome/policies/managed; do
+      POLICY_FILE="$POLICY_DIR/blocker.json"
+      [ -f "$POLICY_FILE" ] || continue
+      as_root chattr -i "$POLICY_FILE" 2>/dev/null || true
+      python3 - "$POLICY_FILE" "$SHIELD_EXT_ID" << 'PYEOF2'
+import json, sys
+path = sys.argv[1]
+ext_id = sys.argv[2]
+with open(path) as f:
+    data = json.load(f)
+data['ExtensionInstallSources'] = ['http://127.0.0.1:19288/*']
+data['ExtensionInstallForcelist'] = [
+    f'{ext_id};http://127.0.0.1:19288/shield_update.xml'
+]
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+PYEOF2
+      as_root chattr +i "$POLICY_FILE" 2>/dev/null || true
+    done
+    status_ok "Browser policy updated with ExtensionInstallForcelist"
+  fi
+
+  # ---- 7. Remove --load-extension if policy is active, else keep as fallback ----
   if [ -n "${SHIELD_EXT_ID:-}" ]; then
     for user_home in /home/* /root; do
       [ -d "$user_home" ] || continue
