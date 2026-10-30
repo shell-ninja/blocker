@@ -33,6 +33,7 @@ struct Config {
     bool firewall = true;           // nftables: only root (the daemon) may send plain DNS/DoT off-box
     bool browser_policies = true;   // managed policies: disable browser DoH, force SafeSearch
     bool block_instagram_explore = true; // block instagram.com/explore and search via browser policies
+    bool block_reddit_nsfw = true;       // block Reddit NSFW subreddits, adult content & 18+ gate via browser policies
     bool curfew = true;             // nightly curfew auto-shutdown
     int curfew_start_hour = 0;      // 00:00 (12:00 AM)
     int curfew_start_min = 0;       // 00 minutes
@@ -58,6 +59,10 @@ struct Config {
     uint64_t unlock_delay = 24 * 3600;  // seconds the unlock request must "age" (only counted while running)
     uint64_t unlock_window = 30 * 60;   // seconds the window stays open afterwards
     uint32_t kdf_iterations = 200000;   // PBKDF2 rounds used when the password is created
+    // Shield extension ID (set by setup.sh, read from /usr/share/blocker/shield_ext_id at runtime).
+    // When non-empty, ExtensionInstallForcelist is added to the Chromium policy so the shield
+    // is installed as an administrator extension (cannot be removed by the user).
+    std::string shield_ext_id;
 
     static Config defaults();
     static Config load(const std::string& path, std::vector<std::string>& warnings);

@@ -91,6 +91,9 @@ Useful options:
 | `--curfew-start HH:MM` | alias for `--curfew-time` |
 | `--curfew-end HH:MM` | set curfew wake/end time (e.g. `05:00`, default `03:00`) |
 | `--curfew / --no-curfew` | enable or disable night curfew auto-shutdown |
+| `--reddit-block / --no-reddit-block` | enable or disable Reddit NSFW & adult content blocking (default enabled) |
+| `--ig-block / --no-ig-block` | enable or disable Instagram explore & search blocking (default enabled) |
+| `--unblock DOMAIN` | unblock a domain by stripping block rules and adding to whitelist |
 | `--popup` | also show the blocked-site popup (off by default) |
 | `--popup-message TEXT` | the popup text (`\n` = new line, `{host}` = blocked name; no `#`) |
 
@@ -344,6 +347,8 @@ Configuration (`/etc/blocker/blocker.conf`, read at start; immutable — change 
 | `block_doh` | `yes` | sinkhole DoH/DoT provider names + Firefox canary |
 | `firewall` | `yes` | nftables: only root may send plain DNS / DoT off-box |
 | `browser_policies` | `yes` | managed policies disabling browser DoH |
+| `block_reddit_nsfw` | `yes` | block Reddit NSFW subreddits, adult content, over18 gate, and NSFW search |
+| `block_instagram_explore` | `yes` | block Instagram explore page and search discovery API endpoints |
 | `takeover_resolver` | `yes` | keep `/etc/resolv.conf` on 127.0.0.1 |
 | `log_blocked` / `log_queries` | `yes` / `no` | journal every block / every query |
 | `redirect` | `yes` | blocked names → loopback + local redirect server (see [redirect](#the-landing-page-redirect)) |

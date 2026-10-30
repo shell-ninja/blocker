@@ -64,4 +64,11 @@ inline std::string unit_dir() { return P("/etc/systemd/system"); }
 
 inline std::string resolv_conf() { return P("/etc/resolv.conf"); }
 
+// Shield extension support
+// /usr/share/blocker/shield_ext_id  - written by setup.sh with the packed CRX extension ID
+// /usr/share/blocker/shield.crx     - packed CRX served by blocker-crxserve.service
+// /usr/share/blocker/shield_update.xml - update manifest for ExtensionInstallForcelist
+inline std::string shield_dir() { return "/usr/share/blocker"; }
+inline std::string shield_ext_id_file() { return "/usr/share/blocker/shield_ext_id"; }
+
 }  // namespace blk::paths

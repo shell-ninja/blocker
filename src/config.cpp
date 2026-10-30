@@ -130,6 +130,7 @@ Config Config::load(const std::string& path, std::vector<std::string>& warnings)
         } else if (key == "firewall") { if (parse_bool(val, b)) c.firewall = b; else bad("expected yes/no");
         } else if (key == "browser_policies") { if (parse_bool(val, b)) c.browser_policies = b; else bad("expected yes/no");
         } else if (key == "block_instagram_explore") { if (parse_bool(val, b)) c.block_instagram_explore = b; else bad("expected yes/no");
+        } else if (key == "block_reddit_nsfw") { if (parse_bool(val, b)) c.block_reddit_nsfw = b; else bad("expected yes/no");
         } else if (key == "curfew") { if (parse_bool(val, b)) c.curfew = b; else bad("expected yes/no");
         } else if (key == "curfew_start" || key == "curfew_time") {
             int h = 0, m = 0;
@@ -261,6 +262,12 @@ bool upgrade_config_text(std::string& text, bool popup, const std::string& popup
         notes.push_back("added Instagram explore & search blocking setting");
         changed = true;
     }
+    if (!has_key(text, "block_reddit_nsfw")) {
+        text += "\n# Block Reddit NSFW subreddits, adult content, over18 gate, and NSFW search queries via browser policies.\n";
+        text += "block_reddit_nsfw = yes\n";
+        notes.push_back("added Reddit NSFW & adult content blocking setting");
+        changed = true;
+    }
     if (!has_key(text, "curfew")) {
         text += "\n# Night curfew: automatically shuts down the PC at curfew_start and keeps it unusable until curfew_end.\n";
         text += "# Sends notifications at 30 min, 15 min, 5 min, and 1 min before shutdown.\n";
@@ -377,6 +384,8 @@ std::string default_config_text(LockMode mode, uint64_t delay_secs, uint64_t win
     t += "browser_policies = yes\n\n";
     t += "# Block Instagram explore page and search queries via managed browser policies.\n";
     t += "block_instagram_explore = yes\n\n";
+    t += "# Block Reddit NSFW subreddits, adult content, over18 gate, and NSFW search queries.\n";
+    t += "block_reddit_nsfw = yes\n\n";
     char cur_s[16], cur_e[16];
     snprintf(cur_s, sizeof(cur_s), "%02d:%02d", curfew_start_h, curfew_start_m);
     snprintf(cur_e, sizeof(cur_e), "%02d:%02d", curfew_end_h, curfew_end_m);

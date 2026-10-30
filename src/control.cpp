@@ -61,6 +61,7 @@ std::string ControlServer::status_text() {
         s += "  curfew     : off\n";
     }
     s += "  ig-explore : " + (c_.cfg.block_instagram_explore ? std::string("blocked (browser policies)") : std::string("allowed")) + "\n";
+    s += "  reddit-nsfw: " + (c_.cfg.block_reddit_nsfw ? std::string("blocked (browser policies)") : std::string("allowed")) + "\n";
     s += "  lock       : " + c_.lock->describe() + "\n";
     s += "  protection :\n" + protect::report(c_.cfg);
     return s;
@@ -101,9 +102,36 @@ Reply ControlServer::handle(const std::string& req, int& exit_code) {
         if (host.empty()) return fail("usage: check <hostname>");
 
         if (c_.cfg.block_instagram_explore && (host == "instagram.com" || ends_with(host, ".instagram.com"))) {
-            if (starts_with(path, "/explore") || starts_with(path, "/api/v1/discover/web/explore_grid") ||
-                starts_with(path, "/api/v1/web/search") || starts_with(path, "/api/v1/fbsearch")) {
+            if (starts_with(path, "/explore") || starts_with(path, "/api/v1/discover") ||
+                starts_with(path, "/api/v1/web/search") || starts_with(path, "/api/v1/fbsearch") ||
+                starts_with(path, "/api/v1/tags") || starts_with(path, "/tags")) {
                 return okay("BLOCKED (Browser Policy: URLBlocklist for Instagram Explore & Search)");
+            }
+        }
+
+        if (c_.cfg.block_reddit_nsfw && (host == "reddit.com" || ends_with(host, ".reddit.com"))) {
+            const char* subs[] = {
+                "nsfw", "gonewild", "porn", "hentai", "rule34", "xxx", "erotic", "sexy",
+                "boobs", "tits", "ass", "pussy", "dick", "cock", "nude", "nudes",
+                "onlyfans", "leaks", "milf", "bdsm", "fetish", "cuckold", "blowjob",
+                "cum", "anal", "vagina", "penis", "ecchi", "yiff", "futanari", "trap",
+                "femboys", "sissies", "amateur", "hardcore", "softcore", "camgirls",
+                "chaturbate", "playboy", "redgifs", "realgirls", "bustypetite",
+                "legalteens", "holdthemoan", "godplus", "grool", "collegesluts",
+                "dirtypens", "dirtysnapchat", "jacking"
+            };
+            bool is_nsfw_sub = false;
+            if (starts_with(path, "/r/")) {
+                std::string sub_path = path.substr(3);
+                for (const char* s : subs) {
+                    if (starts_with(sub_path, s)) { is_nsfw_sub = true; break; }
+                }
+            }
+            if (is_nsfw_sub || starts_with(path, "/over18") || starts_with(path, "/prefs") ||
+                starts_with(path, "/settings/feed") || starts_with(path, "/api/v1/me/prefs") ||
+                path.find("include_over_18") != std::string::npos ||
+                path.find("nsfw") != std::string::npos) {
+                return okay("BLOCKED (Browser Policy: URLBlocklist for Reddit NSFW & Adult Content)");
             }
         }
 
@@ -183,6 +211,29 @@ Reply ControlServer::handle(const std::string& req, int& exit_code) {
         protect::disarm(c_.cfg, false);
         exit_code = 42;  // RestartPreventExitStatus=42 in the unit
         return okay("blocker stopped for upgrade");
+    }
+
+    if (cmd == "UNBLOCK") {
+        std::string target = to_lower(trim(body));
+        if (target.empty()) return fail("no target specified to unblock");
+        LOG_W("authorised unblock requested for '%s'", target.c_str());
+        std::set<std::string> canons = {
+            target,
+            "=" + target,
+            "kw:" + target,
+            "domain " + target,
+            "www." + target,
+            "=www." + target,
+            "domain www." + target
+        };
+        RulesMgr::Edit er = c_.mgr->remove(canons);
+        std::vector<Rule> wl_rules;
+        LineResult lr = parse_rule_line("!" + target);
+        if (lr.rule) wl_rules.push_back(*lr.rule);
+        LineResult lr_www = parse_rule_line("!*." + target);
+        if (lr_www.rule) wl_rules.push_back(*lr_www.rule);
+        RulesMgr::Edit ea = c_.mgr->allow(wl_rules);
+        return okay("unblocked '" + target + "': " + er.msg + "; " + ea.msg);
     }
     return fail("unknown command: " + cmd);
 }

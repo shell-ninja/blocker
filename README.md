@@ -15,7 +15,8 @@ Blocker is a single C++ binary that filters adult content at the DNS level, syst
 
 - Runs a local DNS proxy on `127.0.0.1:53` — blocked names resolve to loopback, everything else is forwarded to Cloudflare Families (`1.1.1.3`)
 - Blocked sites get a `302` redirect to a YouTube video instead of an error page
-- **Instagram Explore & Search Guard**: Enforces immutable browser enterprise policies that block `instagram.com/explore` and search discovery endpoints while keeping home feed, messages, and profiles accessible
+- **Reddit NSFW & Adult Content Guard**: Forcefully blocks and disables adult/NSFW content on Reddit without requiring any removable browser extensions. Enforces kernel-protected browser enterprise policies (`URLBlocklist` / `WebsiteFilter`) that intercept the `over18` age gate, adult subreddits, mature user settings, and NSFW search queries, while sinkholing adult media hosts (RedGIFs, Erome, etc.) at the DNS level
+- **Instagram Explore & Search Guard**: Enforces root-owned, immutable browser enterprise policies that block `instagram.com/explore` and search discovery endpoints without browser extensions, keeping your home feed, direct messages, and profiles intact
 - **Night Curfew & Auto-Shutdown**: Automatically powers off the PC at a user-configured time (default 12:00 AM / 00:00) and keeps it unusable until morning (default 03:00 AM). Dynamically issues desktop alerts and terminal warnings starting 30 minutes before shutdown (at 30m, 15m, 5m, and 1m remaining) to give you plenty of time to save your work.
 - Rules are stored scrambled in a root-only vault — no readable file to delete
 - A systemd watchdog restarts the daemon within 1 second if it's killed; `systemctl stop blocker` is refused
@@ -62,9 +63,12 @@ The script will:
 | `--curfew-start HH:MM` | Alias for `--curfew-time` |
 | `--curfew-end HH:MM` | Set curfew wake/end time (e.g. `05:00`, default `03:00`) |
 | `--curfew / --no-curfew` | Enable or disable night curfew auto-shutdown |
+| `--reddit-block / --no-reddit-block` | Enable or disable Reddit NSFW & adult content blocking (default enabled) |
+| `--ig-block / --no-ig-block` | Enable or disable Instagram explore & search blocking (default enabled) |
 | `--no-firewall` | Skip the nftables DNS-bypass rules |
 | `--build-only` | Just compile, install nothing |
 | `--upgrade` | Replace an existing install |
+| `--unblock DOMAIN` | Remove a domain from block rules and whitelist it |
 | `--dry-run` | Show what would happen without doing anything |
 
 ## Adding / removing rules
@@ -74,6 +78,12 @@ Tightening (blocking more) needs no password:
 ```sh
 sudo blocker add badsite.com '*.ads' kw:gambling
 sudo blocker add --file ~/extra-list.txt
+```
+
+Unblocking a site immediately:
+
+```sh
+sudo blocker unblock example.com
 ```
 
 Loosening (allowing something) needs the password and the unlock window:

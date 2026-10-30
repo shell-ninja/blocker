@@ -1,13 +1,15 @@
 {
-  "name": "Blocker Instagram Shield",
+  "name": "Blocker Web Shield",
   "version": "1.0",
   "manifest_version": 3,
-  "description": "Block Instagram Explore and Search within Single Page App",
+  "description": "Blocker In-Page UI and Keyword Shield for Instagram and Reddit",
   "content_scripts": [
     {
       "matches": [
         "*://*.instagram.com/*",
-        "*://instagram.com/*"
+        "*://instagram.com/*",
+        "*://*.reddit.com/*",
+        "*://reddit.com/*"
       ],
       "js": ["content.js"],
       "run_at": "document_start"

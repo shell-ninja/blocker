@@ -142,7 +142,9 @@ static int cmd_install(const std::vector<std::string>& args) {
     bool random_pw = false, pw_stdin = false, firewall = true, popup = false, redirect = true;
     bool popup_set = false, popup_msg_set = false, redirect_set = false, redirect_url_set = false;
     bool curfew = true, curfew_set = false, ig_block = true, ig_block_set = false;
+    bool reddit_block = true, reddit_block_set = false;
     bool upgrade = false;
+    std::vector<std::string> unblock_items;
     int curfew_start_h = 0, curfew_start_m = 0, curfew_end_h = 3, curfew_end_m = 0;
     bool curfew_start_set = false, curfew_end_set = false;
     std::string popup_message, redirect_url;
@@ -209,6 +211,9 @@ static int cmd_install(const std::vector<std::string>& args) {
         }
         else if (a == "--no-ig-block") { ig_block = false; ig_block_set = true; }
         else if (a == "--ig-block") { ig_block = true; ig_block_set = true; }
+        else if (a == "--no-reddit-block") { reddit_block = false; reddit_block_set = true; }
+        else if (a == "--reddit-block") { reddit_block = true; reddit_block_set = true; }
+        else if (a == "--unblock" && next(v)) unblock_items.push_back(v);
         else { std::fprintf(stderr, "blocker: unknown or incomplete option '%s'\n", a.c_str()); return 2; }
     }
     // validate upstreams early
@@ -311,6 +316,11 @@ static int cmd_install(const std::vector<std::string>& args) {
             notes.push_back(std::string("updated Instagram explore blocking (block_instagram_explore = ") + (ig_block ? "yes" : "no") + ")");
             upgraded = true;
         }
+        if (reddit_block_set) {
+            set_config_value(cur, "block_reddit_nsfw", reddit_block ? "yes" : "no");
+            notes.push_back(std::string("updated Reddit NSFW blocking (block_reddit_nsfw = ") + (reddit_block ? "yes" : "no") + ")");
+            upgraded = true;
+        }
         if (!upgraded) {
             std::printf("keeping existing %s\n", paths::conf().c_str());
         } else {
@@ -339,6 +349,60 @@ static int cmd_install(const std::vector<std::string>& args) {
     if (migrated) std::printf("moved %d rule file(s) of the previous install into the hidden vault\n", migrated);
     if (!path_exists(paths::keywords())) vault::write(paths::keywords(), embedded::default_keywords(), 0600, false);
     if (!path_exists(paths::whitelist())) vault::write(paths::whitelist(), embedded::DEFAULT_WHITELIST, 0600, false);
+
+    if (!unblock_items.empty()) {
+        for (const auto& target : unblock_items) {
+            std::string t = to_lower(trim(target));
+            if (t.empty()) continue;
+            std::set<std::string> canons = {
+                t, "=" + t, "kw:" + t, "domain " + t,
+                "www." + t, "=www." + t, "domain www." + t, "*." + t
+            };
+            for (const auto& path : {paths::keywords(), paths::baseline()}) {
+                std::string content;
+                if (path_exists(path) && vault::read(path, content) == vault::Kind::Decoded) {
+                    std::string out;
+                    int removed = 0;
+                    for (const std::string& line : split(content, '\n')) {
+                        std::string trimmed = to_lower(trim(line));
+                        if (trimmed.empty()) continue;
+                        LineResult lr = parse_rule_line(line);
+                        std::string c = lr.rule ? lr.rule->canon() : trimmed;
+                        if (canons.count(c) || canons.count(trimmed) || trimmed == t || trimmed == ("=" + t) ||
+                            (trimmed.find(t) != std::string::npos && trimmed.find('.') != std::string::npos)) {
+                            removed++;
+                            continue;
+                        }
+                        out += line + "\n";
+                    }
+                    if (removed > 0) {
+                        vault::write(path, out, 0600, true);
+                        std::printf("removed %d block rule(s) matching '%s' from %s\n", removed, t.c_str(), path.c_str());
+                    }
+                }
+            }
+            for (const auto& path : {paths::whitelist(), paths::wl_baseline()}) {
+                std::string content;
+                if (path_exists(path) && vault::read(path, content) == vault::Kind::Decoded) {
+                    bool already = false;
+                    for (const std::string& line : split(content, '\n')) {
+                        std::string trimmed = to_lower(trim(line));
+                        if (trimmed == t || trimmed == ("!" + t) || trimmed == ("!." + t) || trimmed == ("!*." + t)) {
+                            already = true;
+                            break;
+                        }
+                    }
+                    if (!already) {
+                        if (!content.empty() && content.back() != '\n') content.push_back('\n');
+                        content += "!" + t + "\n";
+                        content += "!*." + t + "\n";
+                        vault::write(path, content, 0600, true);
+                        std::printf("added '%s' to %s\n", t.c_str(), path.c_str());
+                    }
+                }
+            }
+        }
+    }
 
     std::string generated;
     if (cfg.lock_mode != LockMode::Delay && !path_exists(paths::auth())) {
@@ -536,6 +600,14 @@ int main(int argc, char** argv) {
     if (cmd == "uninstall") return cmd_uninstall();
     if (cmd == "start") return cmd_start();
     if (cmd == "upgrade") return call("UPGRADE", "");
+    if (cmd == "unblock") {
+        if (args.empty()) { std::fprintf(stderr, "usage: blocker unblock <domain>...\n"); return 2; }
+        for (const std::string& target : args) {
+            int rc = call("UNBLOCK", target);
+            if (rc != 0) return rc;
+        }
+        return 0;
+    }
     if (cmd == "stop") {
         if (!args.empty() && args[0] == "--upgrade") return call("UPGRADE", "");
         return call("STOP", "");

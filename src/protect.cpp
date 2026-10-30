@@ -55,6 +55,7 @@ std::string resolved_conf() { return P("/etc/systemd/resolved.conf.d/90-blocker.
 struct PolicyTarget { const char* dir; const char* file; bool firefox; };
 const PolicyTarget kPolicies[] = {
     {"/etc/firefox/policies", "policies.json", true},
+    {"/etc/librewolf/policies", "policies.json", true},
     {"/etc/opt/chrome/policies/managed", "blocker.json", false},
     {"/etc/chromium/policies/managed", "blocker.json", false},
     {"/etc/chromium-browser/policies/managed", "blocker.json", false},
@@ -62,6 +63,8 @@ const PolicyTarget kPolicies[] = {
     {"/etc/brave-browser/policies/managed", "blocker.json", false},
     {"/etc/brave-origin/policies/managed", "blocker.json", false},
     {"/etc/opt/edge/policies/managed", "blocker.json", false},
+    {"/etc/vivaldi/policies/managed", "blocker.json", false},
+    {"/etc/opt/vivaldi/policies/managed", "blocker.json", false},
 };
 
 bool warned_unsupported = false;
@@ -318,66 +321,193 @@ static void firewall_apply() {
 static void firewall_remove() { run_cmd({"nft", "delete", "table", "inet", "blocker"}); }
 
 // ---------------------------------------------------------------- browser policies
+static std::vector<std::string> get_blocked_urls(bool firefox, const Config& cfg) {
+    std::vector<std::string> list;
+    if (cfg.block_instagram_explore) {
+        if (firefox) {
+            std::vector<std::string> ig = {
+                "*://*.instagram.com/explore*",
+                "*://instagram.com/explore*",
+                "*://*.instagram.com/api/v1/discover/web/explore_grid/*",
+                "*://instagram.com/api/v1/discover/web/explore_grid/*",
+                "*://*.instagram.com/api/v1/web/search/*",
+                "*://instagram.com/api/v1/web/search/*",
+                "*://*.instagram.com/web/search/*",
+                "*://instagram.com/web/search/*",
+                "*://*.instagram.com/api/v1/fbsearch/*",
+                "*://instagram.com/api/v1/fbsearch/*",
+                "*://*.instagram.com/api/v1/tags/*",
+                "*://instagram.com/api/v1/tags/*",
+                "*://*.instagram.com/tags/*",
+                "*://instagram.com/tags/*"
+            };
+            list.insert(list.end(), ig.begin(), ig.end());
+        } else {
+            std::vector<std::string> ig = {
+                "instagram.com/explore",
+                "instagram.com/api/v1/discover/web/explore_grid",
+                "instagram.com/api/v1/web/search",
+                "instagram.com/web/search",
+                "instagram.com/api/v1/fbsearch",
+                "instagram.com/api/v1/tags",
+                "instagram.com/tags",
+                "i.instagram.com/api/v1/discover",
+                "i.instagram.com/api/v1/users/search",
+                "i.instagram.com/api/v1/fbsearch",
+                "i.instagram.com/api/v1/tags"
+            };
+            list.insert(list.end(), ig.begin(), ig.end());
+        }
+    }
+    if (cfg.block_reddit_nsfw) {
+        const char* media_hosts[] = {
+            "redgifs.com", "erome.com", "scrolller.com", "rule34.xxx", "rule34video.com",
+            "eporner.com", "pornhub.com", "xvideos.com", "xnxx.com", "xhamster.com",
+            "spankbang.com", "youporn.com", "redtube.com", "onlyfans.com", "fansly.com",
+            "manyvids.com", "chaturbate.com", "cam4.com", "bongacams.com", "coomer.party",
+            "coomer.su", "kemono.party", "kemono.su", "bunkr.is", "bunkr.si", "bunkr.to",
+            "bunkr.cr", "cyberdrop.me", "pixhost.to"
+        };
+        for (const char* h : media_hosts) {
+            if (firefox) {
+                list.push_back(std::string("*://*.") + h + "/*");
+                list.push_back(std::string("*://") + h + "/*");
+            } else {
+                list.push_back(h);
+            }
+        }
+
+        const char* subs[] = {
+            "nsfw", "gonewild", "porn", "hentai", "rule34", "xxx", "erotic", "sexy",
+            "boobs", "tits", "ass", "pussy", "dick", "cock", "nude", "nudes",
+            "onlyfans", "leaks", "milf", "bdsm", "fetish", "cuckold", "blowjob",
+            "cum", "anal", "vagina", "penis", "ecchi", "yiff", "futanari", "trap",
+            "femboys", "sissies", "amateur", "hardcore", "softcore", "camgirls",
+            "chaturbate", "playboy", "redgifs", "RealGirls", "BustyPetite",
+            "LegalTeens", "holdthemoan", "godplus", "grool", "collegesluts",
+            "dirtypens", "dirtysnapchat", "jacking"
+        };
+        const char* search_terms[] = {
+            "nsfw", "porn", "xxx", "hentai", "erotic", "sexy", "gonewild", "nude",
+            "boobs", "tits", "ass", "pussy", "dick", "cock", "milf", "anal",
+            "fetish", "bdsm", "futanari", "ecchi", "yiff"
+        };
+
+        if (firefox) {
+            std::vector<std::string> base = {
+                "*://*.reddit.com/over18*", "*://reddit.com/over18*",
+                "*://*.reddit.com/r/over18*", "*://reddit.com/r/over18*",
+                "*://*.reddit.com/prefs*", "*://reddit.com/prefs*",
+                "*://*.reddit.com/settings/feed*", "*://reddit.com/settings/feed*",
+                "*://*.reddit.com/api/v1/me/prefs*", "*://reddit.com/api/v1/me/prefs*",
+                "*://*.reddit.com/search*include_over_18*", "*://reddit.com/search*include_over_18*",
+                "*://*.reddit.com/svc/shreddit*include_over_18*", "*://reddit.com/svc/shreddit*include_over_18*"
+            };
+            list.insert(list.end(), base.begin(), base.end());
+            for (const char* term : search_terms) {
+                list.push_back(std::string("*://*.reddit.com/search*") + term + "*");
+                list.push_back(std::string("*://reddit.com/search*") + term + "*");
+                list.push_back(std::string("*://*.reddit.com/svc/shreddit*") + term + "*");
+                list.push_back(std::string("*://reddit.com/svc/shreddit*") + term + "*");
+            }
+            for (const char* sub : subs) {
+                list.push_back(std::string("*://*.reddit.com/r/") + sub + "*");
+                list.push_back(std::string("*://reddit.com/r/") + sub + "*");
+                list.push_back(std::string("*://*.reddit.com/svc/shreddit/r/") + sub + "*");
+                list.push_back(std::string("*://reddit.com/svc/shreddit/r/") + sub + "*");
+                list.push_back(std::string("*://*.reddit.com/svc/shreddit/community-more-posts/r/") + sub + "*");
+                list.push_back(std::string("*://reddit.com/svc/shreddit/community-more-posts/r/") + sub + "*");
+                list.push_back(std::string("*://*.reddit.com/svc/shreddit/comments/r/") + sub + "*");
+                list.push_back(std::string("*://reddit.com/svc/shreddit/comments/r/") + sub + "*");
+            }
+        } else {
+            std::vector<std::string> base = {
+                "reddit.com/over18",
+                "reddit.com/r/over18",
+                "reddit.com/svc/shreddit/over18",
+                "reddit.com/prefs",
+                "reddit.com/settings/feed",
+                "reddit.com/api/v1/me/prefs",
+                "reddit.com/search@include_over_18=*",
+                "reddit.com/search/@include_over_18=*",
+                "reddit.com/svc/shreddit@include_over_18=*"
+            };
+            list.insert(list.end(), base.begin(), base.end());
+            for (const char* term : search_terms) {
+                list.push_back(std::string("reddit.com/search@q=") + term + "*");
+                list.push_back(std::string("reddit.com/search/@q=") + term + "*");
+                list.push_back(std::string("reddit.com/svc/shreddit@q=") + term + "*");
+            }
+            for (const char* sub : subs) {
+                std::string s = sub;
+                std::string s_upper = s;
+                for (char& c : s_upper) c = char(toupper(c));
+                std::string s_cap = s;
+                if (!s_cap.empty()) s_cap[0] = char(toupper(s_cap[0]));
+
+                for (const std::string& name : {s, s_upper, s_cap}) {
+                    list.push_back(std::string("reddit.com/r/") + name);
+                    list.push_back(std::string("reddit.com/svc/shreddit/r/") + name);
+                    list.push_back(std::string("reddit.com/svc/shreddit/community-more-posts/r/") + name);
+                    list.push_back(std::string("reddit.com/svc/shreddit/comments/r/") + name);
+                    list.push_back(std::string("reddit.com/api/v1/r/") + name);
+                }
+            }
+        }
+    }
+    return list;
+}
+
 static std::string policy_json(bool firefox, const Config& cfg) {
+    std::vector<std::string> blocks = get_blocked_urls(firefox, cfg);
     if (firefox) {
         std::string j = "{\n  \"blocker-managed\": true,\n  \"policies\": {\n    \"DNSOverHTTPS\": { \"Enabled\": false, \"Locked\": true }";
-        if (cfg.block_instagram_explore) {
-            j += ",\n    \"WebsiteFilter\": {\n"
-                 "      \"Block\": [\n"
-                 "        \"*://*.instagram.com/explore*\",\n"
-                 "        \"*://instagram.com/explore*\",\n"
-                 "        \"*://*.instagram.com/explore/*\",\n"
-                 "        \"*://instagram.com/explore/*\",\n"
-                 "        \"*://*.instagram.com/api/v1/discover/web/explore_grid/*\",\n"
-                 "        \"*://instagram.com/api/v1/discover/web/explore_grid/*\",\n"
-                 "        \"*://*.instagram.com/api/v1/web/search/topsearch/*\",\n"
-                 "        \"*://instagram.com/api/v1/web/search/topsearch/*\",\n"
-                 "        \"*://*.instagram.com/api/v1/fbsearch/*\",\n"
-                 "        \"*://instagram.com/api/v1/fbsearch/*\"\n"
-                 "      ]\n"
-                 "    }";
+        if (!blocks.empty()) {
+            j += ",\n    \"WebsiteFilter\": {\n      \"Block\": [\n";
+            for (size_t i = 0; i < blocks.size(); ++i) {
+                j += "        \"" + blocks[i] + "\"" + (i + 1 < blocks.size() ? "," : "") + "\n";
+            }
+            j += "      ]\n    }";
         }
         return j + "\n  }\n}\n";
     }
     std::string j = "{\n  \"DnsOverHttpsMode\": \"off\",\n  \"BuiltInDnsClientEnabled\": false";
     if (cfg.safesearch) j += ",\n  \"ForceGoogleSafeSearch\": true";
-    if (cfg.block_instagram_explore) {
-        j += ",\n  \"URLBlocklist\": [\n"
-             "    \"instagram.com/explore\",\n"
-             "    \"instagram.com/explore/*\",\n"
-             "    \".instagram.com/explore\",\n"
-             "    \".instagram.com/explore/*\",\n"
-             "    \"https://instagram.com/explore\",\n"
-             "    \"https://instagram.com/explore/*\",\n"
-             "    \"https://.instagram.com/explore\",\n"
-             "    \"https://.instagram.com/explore/*\",\n"
-             "    \"instagram.com/web/search\",\n"
-             "    \"instagram.com/web/search/*\",\n"
-             "    \".instagram.com/web/search\",\n"
-             "    \".instagram.com/web/search/*\",\n"
-             "    \"https://.instagram.com/web/search\",\n"
-             "    \"https://.instagram.com/web/search/*\",\n"
-             "    \"instagram.com/api/v1/discover/web/explore_grid\",\n"
-             "    \".instagram.com/api/v1/discover/web/explore_grid\",\n"
-             "    \"https://.instagram.com/api/v1/discover/web/explore_grid\",\n"
-             "    \"instagram.com/api/v1/web/search/topsearch\",\n"
-             "    \".instagram.com/api/v1/web/search/topsearch\",\n"
-             "    \"https://.instagram.com/api/v1/web/search/topsearch\",\n"
-             "    \"instagram.com/api/v1/fbsearch\",\n"
-             "    \".instagram.com/api/v1/fbsearch\",\n"
-             "    \"https://.instagram.com/api/v1/fbsearch\"\n"
-             "  ]";
+    // Force-install the shield extension via admin policy (tamper-proof: user cannot remove it).
+    // The ext ID is written by setup.sh into /usr/share/blocker/shield_ext_id.
+    if (!cfg.shield_ext_id.empty()) {
+        j += ",\n  \"ExtensionInstallSources\": [\n    \"http://127.0.0.1:19288/*\"\n  ]";
+        j += ",\n  \"ExtensionInstallForcelist\": [\n    \""
+           + cfg.shield_ext_id
+           + ";http://127.0.0.1:19288/shield_update.xml\"\n  ]";
+    }
+    if (!blocks.empty()) {
+        j += ",\n  \"URLBlocklist\": [\n";
+        for (size_t i = 0; i < blocks.size(); ++i) {
+            j += "    \"" + blocks[i] + "\"" + (i + 1 < blocks.size() ? "," : "") + "\n";
+        }
+        j += "  ]";
     }
     return j + "\n}\n";
 }
 
 static void policies_apply(const Config& cfg) {
+    // Load the shield extension ID from disk (written by setup.sh at install time).
+    // Make a local copy of cfg so we can inject the ext ID without modifying the caller's config.
+    Config effective = cfg;
+    if (effective.shield_ext_id.empty()) {
+        std::string id = slurp(shield_ext_id_file());
+        // Strip any trailing whitespace / newlines
+        while (!id.empty() && (id.back() == '\n' || id.back() == '\r' || id.back() == ' '))
+            id.pop_back();
+        if (id.size() == 32) effective.shield_ext_id = id;  // valid CRX ext IDs are exactly 32 chars
+    }
     for (const PolicyTarget& t : kPolicies) {
         std::string dir = P(t.dir), file = dir + "/" + t.file;
         if (t.firefox && path_exists(file) && slurp(file).find("blocker-managed") == std::string::npos) continue;  // admin's own file
-        if (!file_is(file, policy_json(t.firefox, cfg)) || !is_immutable(file)) {
+        if (!file_is(file, policy_json(t.firefox, effective)) || !is_immutable(file)) {
             make_dirs(dir, 0755);
-            ensure_file(file, policy_json(t.firefox, cfg), 0644);
+            ensure_file(file, policy_json(t.firefox, effective), 0644);
         }
     }
 }

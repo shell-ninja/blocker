@@ -429,6 +429,7 @@ std::string format_help(const char* version, int fd) {
             {"blocker check <hostname>", "would this name be blocked? (shows deciding rule)"},
             {"blocker test-alert", "verify desktop warning notifications in graphical session"},
             {"blocker add <rule>... | --file F | --defaults", "block more (always allowed)"},
+            {"blocker unblock <domain>...", "unblock domain immediately (removes rule & whitelists)"},
             {"blocker lint <file> [--whitelist]", "validate a rule file before importing it"},
             {"blocker unallow <entry>...", "remove whitelist entries (tightens filter)"},
         };
@@ -470,6 +471,8 @@ std::string format_help(const char* version, int fd) {
             "  " + paint("--curfew-start <HH:MM>", bright_white(fd), fd) + "        curfew auto-shutdown start time (default 00:00)",
             "  " + paint("--curfew-end <HH:MM>", bright_white(fd), fd) + "          curfew wake/end time (default 03:00)",
             "  " + paint("--curfew / --no-curfew", bright_white(fd), fd) + "         enable / disable night curfew auto-shutdown",
+            "  " + paint("--ig-block / --no-ig-block", bright_white(fd), fd) + "       block / allow Instagram explore & search",
+            "  " + paint("--reddit-block / --no-reddit-block", bright_white(fd), fd) + "   block / allow Reddit NSFW & adult subreddits",
             "  " + paint("--upstream <ip[,ip]>", bright_white(fd), fd) + "          custom upstream DNS resolvers",
             "  " + paint("--redirect-url <URL>", bright_white(fd), fd) + "           redirect blocked requests to landing page",
             "  " + paint("--no-redirect", bright_white(fd), fd) + "                  disable HTTP landing page redirector",

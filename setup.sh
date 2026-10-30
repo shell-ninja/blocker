@@ -11,6 +11,8 @@
 # Options handled here:   -y/--yes  --build-only  --install-deps  --upgrade  --dry-run  -h/--help
 # Everything else is passed to `blocker install` (--mode, --delay-hours, --window-minutes,
 # --curfew-time HH:MM, --curfew-start HH:MM, --curfew-end HH:MM, --curfew / --no-curfew,
+# --reddit-block / --no-reddit-block, --ig-block / --no-ig-block,
+# --unblock DOMAIN,
 # --redirect-url URL, --no-redirect, --popup, --popup-message TEXT,
 # --random-password, --password-stdin, --upstream, --no-firewall).
 set -euo pipefail
@@ -44,7 +46,7 @@ banner() {
   printf "${C_MAGENTA}/_____/_/\____/\___/_/|_|\___/_/     ${C_RESET}\n"
   printf "\n"
   printf "${C_DIM}╭──────────────────────────────────────────────────────────────────────────────╮${C_RESET}\n"
-  printf "${C_DIM}│${C_RESET}   ${C_BOLD}${C_CYAN}blocker${C_RESET} ${C_MUTED}•${C_RESET} ${C_BOLD}High-Performance Adult-Content Filter & Tamper Protection${C_RESET}      ${C_DIM}│${C_RESET}\n"
+  printf "${C_DIM}│${C_RESET}   ${C_BOLD}${C_CYAN}blocker${C_RESET} ${C_MUTED}•${C_RESET} ${C_BOLD}High-Performance Adult-Content Filter & Tamper Protection${C_RESET}        ${C_DIM}│${C_RESET}\n"
   printf "${C_DIM}╰──────────────────────────────────────────────────────────────────────────────╯${C_RESET}\n"
 }
 
@@ -202,9 +204,9 @@ fi
 
 if [ "$INSTALLED" = 1 ] && [ "$UPGRADE" = 0 ]; then
   printf "\n${C_YELLOW}┌── Existing Installation Detected ────────────────────────────────────────────┐${C_RESET}\n"
-  printf "${C_YELLOW}│${C_RESET} blocker is already installed on this machine and active on 127.0.0.1:53.      ${C_YELLOW}│${C_RESET}\n"
+  printf "${C_YELLOW}│${C_RESET} blocker is already installed on this machine and active on 127.0.0.1:53.     ${C_YELLOW}│${C_RESET}\n"
   printf "${C_YELLOW}│${C_RESET} To safely upgrade to this version without losing settings, run:              ${C_YELLOW}│${C_RESET}\n"
-  printf "${C_YELLOW}│${C_RESET}   ${C_BOLD}./setup.sh --upgrade${C_RESET}                                                        ${C_YELLOW}│${C_RESET}\n"
+  printf "${C_YELLOW}│${C_RESET}   ${C_BOLD}./setup.sh --upgrade${C_RESET}                                                       ${C_YELLOW}│${C_RESET}\n"
   printf "${C_YELLOW}└──────────────────────────────────────────────────────────────────────────────┘${C_RESET}\n\n"
   fail "blocker is already installed (run with --upgrade)"
 fi
@@ -230,7 +232,7 @@ run_with_spinner "Compiling core engine with system hardening" make
 
 if [ "$BUILD_ONLY" = 1 ]; then
   printf "\n${C_GREEN}╭──────────────────────────────────────────────────────────────────────────────╮${C_RESET}\n"
-  printf "${C_GREEN}│${C_RESET}  ${C_BOLD}✔ Success:${C_RESET} Binary compiled at ${C_CYAN}build/blocker${C_RESET} (standalone build).        ${C_GREEN}│${C_RESET}\n"
+  printf "${C_GREEN}│${C_RESET}  ${C_BOLD}✔ Success:${C_RESET} Binary compiled at ${C_CYAN}build/blocker${C_RESET} (standalone build).             ${C_GREEN}│${C_RESET}\n"
   printf "${C_GREEN}╰──────────────────────────────────────────────────────────────────────────────╯${C_RESET}\n\n"
   exit 0
 fi
@@ -256,6 +258,7 @@ if [ "$UPGRADE" = 1 ]; then
 else
   printf " ${C_CYAN}│${C_RESET}  ${C_BOLD}Install Target:${C_RESET} /usr/local/sbin/blocker (systemd service)\n"
   printf " ${C_CYAN}│${C_RESET}  ${C_BOLD}DNS Hijack Protection:${C_RESET} /etc/resolv.conf pinned & immutable (chattr +i)\n"
+  printf " ${C_CYAN}│${C_RESET}  ${C_BOLD}Adult Content Defenses:${C_RESET} Enforced browser policies for Reddit NSFW & Instagram explore\n"
   printf " ${C_CYAN}│${C_RESET}  ${C_BOLD}Anti-Tamper Ratchet:${C_RESET} Loosening gated by delayed unlock countdown & password\n"
 fi
 
@@ -338,6 +341,170 @@ else
   run as_root ./build/blocker install ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}
 fi
 
+# Deploy Blocker Web Shield as a tamper-proof administrator extension
+# Uses ExtensionInstallForcelist: shows "Installed by your administrator" in
+# brave://extensions with no Remove button. User CANNOT remove it.
+if [ "$DRY" = 0 ]; then
+  # ---- 1. Copy shield source files ----
+  for dir in shield ig-shield; do
+    as_root chattr -i /usr/share/blocker/$dir/* 2>/dev/null || true
+    as_root mkdir -p /usr/share/blocker/$dir
+    as_root cp -f assets/shield/manifest.json /usr/share/blocker/$dir/manifest.json
+    as_root cp -f assets/shield/content.js /usr/share/blocker/$dir/content.js
+    as_root chmod 755 /usr/share/blocker/$dir
+    as_root chmod 644 /usr/share/blocker/$dir/*
+    as_root chattr +i /usr/share/blocker/$dir/* 2>/dev/null || true
+  done
+
+  # ---- 2. Generate persistent RSA key (keeps ext ID stable across upgrades) ----
+  SHIELD_KEY="/usr/share/blocker/shield.pem"
+  if [ ! -f "$SHIELD_KEY" ]; then
+    status_info "Generating RSA key for shield CRX (one-time)..."
+    as_root openssl genrsa -out "$SHIELD_KEY" 2048 2>/dev/null
+    as_root chmod 600 "$SHIELD_KEY"
+  fi
+
+  # ---- 3. Pack the CRX using Brave ----
+  BRAVE_BIN=""
+  for b in /opt/brave-origin-bin/brave /opt/brave-bin/brave /usr/bin/brave-browser /usr/bin/brave; do
+    [ -x "$b" ] && BRAVE_BIN="$b" && break
+  done
+
+  if [ -n "$BRAVE_BIN" ]; then
+    status_info "Packing shield.crx..."
+    as_root chattr -i /usr/share/blocker/shield/* 2>/dev/null || true
+    TMP_PACK=$(mktemp -d)
+    as_root cp -r /usr/share/blocker/shield "$TMP_PACK/shield"
+    as_root chmod -R a+rX "$TMP_PACK/shield"
+    # Temporarily make PEM readable so Brave (running as user) can read it
+    as_root chmod 644 "$SHIELD_KEY"
+    as_root cp "$SHIELD_KEY" "$TMP_PACK/shield.pem"
+    as_root chmod 600 "$SHIELD_KEY"  # restore strict perms immediately
+    chmod 644 "$TMP_PACK/shield.pem"
+    "$BRAVE_BIN" --headless=new --no-sandbox --disable-gpu \
+      --pack-extension="$TMP_PACK/shield" \
+      --pack-extension-key="$TMP_PACK/shield.pem" \
+      2>/dev/null || true
+    if [ -f "$TMP_PACK/shield.crx" ]; then
+      as_root cp -f "$TMP_PACK/shield.crx" /usr/share/blocker/shield.crx
+      as_root chmod 644 /usr/share/blocker/shield.crx
+      status_ok "shield.crx packed"
+    else
+      status_warn "Brave CRX pack failed - trying chromium fallback..."
+      for b2 in /usr/bin/chromium /usr/bin/chromium-browser /usr/bin/google-chrome; do
+        if [ -x "$b2" ]; then
+          "$b2" --headless=new --no-sandbox --disable-gpu \
+            --pack-extension="$TMP_PACK/shield" \
+            --pack-extension-key="$TMP_PACK/shield.pem" \
+            2>/dev/null || true
+          [ -f "$TMP_PACK/shield.crx" ] && break
+        fi
+      done
+      if [ -f "$TMP_PACK/shield.crx" ]; then
+        as_root cp -f "$TMP_PACK/shield.crx" /usr/share/blocker/shield.crx
+        as_root chmod 644 /usr/share/blocker/shield.crx
+        status_ok "shield.crx packed (chromium fallback)"
+      else
+        status_warn "CRX pack failed - will fall back to --load-extension"
+      fi
+    fi
+    rm -rf "$TMP_PACK"
+    as_root chattr +i /usr/share/blocker/shield/* 2>/dev/null || true
+  fi
+
+  # ---- 4. Compute Extension ID and write update.xml ----
+  SHIELD_EXT_ID=""
+  if [ -f /usr/share/blocker/shield.crx ] && [ -f "$SHIELD_KEY" ]; then
+    SHIELD_EXT_ID=$(as_root openssl rsa -in "$SHIELD_KEY" -pubout -outform DER 2>/dev/null \
+      | sha256sum \
+      | awk '{print substr($1,1,32)}' \
+      | python3 -c "
+import sys
+h = sys.stdin.read().strip()
+print(\'\'.join(chr(ord(\'a\') + int(c, 16)) for c in h))
+" 2>/dev/null || true)
+    if [ ${#SHIELD_EXT_ID} -eq 32 ]; then
+      echo "$SHIELD_EXT_ID" | as_root tee /usr/share/blocker/shield_ext_id > /dev/null
+      as_root chmod 644 /usr/share/blocker/shield_ext_id
+      status_ok "Shield extension ID: $SHIELD_EXT_ID"
+      as_root tee /usr/share/blocker/shield_update.xml > /dev/null << XMLEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
+  <app appid="${SHIELD_EXT_ID}">
+    <updatecheck codebase="http://127.0.0.1:19288/shield.crx" version="1.0" />
+  </app>
+</gupdate>
+XMLEOF
+      as_root chmod 644 /usr/share/blocker/shield_update.xml
+    else
+      status_warn "Could not compute extension ID"
+      SHIELD_EXT_ID=""
+    fi
+  fi
+
+  # ---- 5. Start CRX HTTP server ----
+  as_root tee /etc/systemd/system/blocker-crxserve.service > /dev/null << 'SVCEOF'
+[Unit]
+Description=Blocker Shield CRX Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -m http.server 19288 --directory /usr/share/blocker
+Restart=always
+RestartSec=2
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+  as_root systemctl daemon-reload 2>/dev/null || true
+  as_root systemctl enable --now blocker-crxserve.service 2>/dev/null || true
+  if as_root systemctl is-active --quiet blocker-crxserve.service 2>/dev/null; then
+    status_ok "blocker-crxserve.service started on port 19288"
+  else
+    status_warn "blocker-crxserve not running - check: journalctl -u blocker-crxserve"
+  fi
+
+  # ---- 6. Remove --load-extension if policy is active, else keep as fallback ----
+  if [ -n "${SHIELD_EXT_ID:-}" ]; then
+    for user_home in /home/* /root; do
+      [ -d "$user_home" ] || continue
+      u_cfg="$user_home/.config"
+      [ -d "$u_cfg" ] || continue
+      for flag_file in brave-flags.conf brave-origin-flags.conf chromium-flags.conf chrome-flags.conf vivaldi-flags.conf; do
+        tgt="$u_cfg/$flag_file"
+        [ -f "$tgt" ] || continue
+        as_root chattr -i "$tgt" 2>/dev/null || true
+        as_root sed -i '/--load-extension=.*blocker/d' "$tgt" 2>/dev/null || true
+        as_root chattr +i "$tgt" 2>/dev/null || true
+      done
+    done
+    status_ok "Removed --load-extension (replaced by administrator policy)"
+  else
+    for user_home in /home/* /root; do
+      [ -d "$user_home" ] || continue
+      u_cfg="$user_home/.config"
+      [ -d "$u_cfg" ] || continue
+      for flag_file in brave-flags.conf brave-origin-flags.conf chromium-flags.conf chrome-flags.conf vivaldi-flags.conf; do
+        tgt="$u_cfg/$flag_file"
+        as_root chattr -i "$tgt" 2>/dev/null || true
+        if [ ! -f "$tgt" ]; then
+          echo "--load-extension=/usr/share/blocker/shield" | as_root tee "$tgt" > /dev/null
+          as_root chown "$(stat -c '%U:%G' "$user_home")" "$tgt" 2>/dev/null || true
+        else
+          as_root sed -i 's|/usr/share/blocker/ig-shield|/usr/share/blocker/shield|g' "$tgt" 2>/dev/null || true
+          if ! grep -q -- "--load-extension=/usr/share/blocker/shield" "$tgt"; then
+            echo "--load-extension=/usr/share/blocker/shield" | as_root tee -a "$tgt" > /dev/null
+          fi
+        fi
+        as_root chattr +i "$tgt" 2>/dev/null || true
+      done
+    done
+    status_warn "Using --load-extension fallback (CRX pack failed)"
+  fi
+fi
 
 # ------------------------------------------------------------------ Verification
 printf "\n${C_CYAN}┌───${C_RESET} ${BG_CYAN}${C_BOLD} VERIFY ${C_RESET} ${C_BOLD}Active Protection Health Check${C_RESET}\n"
@@ -386,15 +553,15 @@ sleep 1
 # ------------------------------------------------------------------ Completion Card
 printf "\n"
 printf "${C_GREEN}╭──────────────────────────────────────────────────────────────────────────────╮${C_RESET}\n"
-printf "${C_GREEN}│${C_RESET}  ${C_BOLD}${C_GREEN}✔  BLOCKER SUCCESSFULLY INSTALLED & ARMED${C_RESET}                                  ${C_GREEN}│${C_RESET}\n"
+printf "${C_GREEN}│${C_RESET}  ${C_BOLD}${C_GREEN}✔  BLOCKER SUCCESSFULLY INSTALLED & ARMED${C_RESET}                                   ${C_GREEN}│${C_RESET}\n"
 printf "${C_GREEN}├──────────────────────────────────────────────────────────────────────────────┤${C_RESET}\n"
 printf "${C_GREEN}│${C_RESET}  ${C_BOLD}Essential Commands (run with sudo):${C_RESET}                                         ${C_GREEN}│${C_RESET}\n"
 printf "${C_GREEN}│${C_RESET}    ${C_CYAN}blocker status${C_RESET}           Daemon, counters, lock and defense health        ${C_GREEN}│${C_RESET}\n"
-printf "${C_GREEN}│${C_RESET}    ${C_CYAN}blocker check <hostname>${C_RESET} Test if a host is blocked & see deciding rule   ${C_GREEN}│${C_RESET}\n"
+printf "${C_GREEN}│${C_RESET}    ${C_CYAN}blocker check <hostname>${C_RESET} Test if a host is blocked & see deciding rule    ${C_GREEN}│${C_RESET}\n"
 printf "${C_GREEN}│${C_RESET}    ${C_CYAN}blocker test-alert${C_RESET}       Verify desktop warning notifications in GUI      ${C_GREEN}│${C_RESET}\n"
 printf "${C_GREEN}│${C_RESET}    ${C_CYAN}blocker add <rule>...${C_RESET}    Add rules (never requires password or delay)     ${C_GREEN}│${C_RESET}\n"
 printf "${C_GREEN}│${C_RESET}    ${C_CYAN}blocker unlock-request${C_RESET}   Begin delayed unlock period to edit rules        ${C_GREEN}│${C_RESET}\n"
-printf "${C_GREEN}│${C_RESET}    ${C_CYAN}journalctl -u blocker -f${C_RESET} Live query and filter activity log              ${C_GREEN}│${C_RESET}\n"
+printf "${C_GREEN}│${C_RESET}    ${C_CYAN}journalctl -u blocker -f${C_RESET} Live query and filter activity log               ${C_GREEN}│${C_RESET}\n"
 printf "${C_GREEN}├──────────────────────────────────────────────────────────────────────────────┤${C_RESET}\n"
 printf "${C_GREEN}│${C_RESET}  ${C_MUTED}Default blocked sites and vault tables are securely locked.${C_RESET}                 ${C_GREEN}│${C_RESET}\n"
 printf "${C_GREEN}│${C_RESET}  ${C_MUTED}Full documentation & customization options available in USAGE.md${C_RESET}            ${C_GREEN}│${C_RESET}\n"
