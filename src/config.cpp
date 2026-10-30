@@ -131,7 +131,9 @@ Config Config::load(const std::string& path, std::vector<std::string>& warnings)
         } else if (key == "browser_policies") { if (parse_bool(val, b)) c.browser_policies = b; else bad("expected yes/no");
         } else if (key == "block_instagram_explore") { if (parse_bool(val, b)) c.block_instagram_explore = b; else bad("expected yes/no");
         } else if (key == "block_reddit_nsfw") { if (parse_bool(val, b)) c.block_reddit_nsfw = b; else bad("expected yes/no");
-        } else if (key == "curfew") { if (parse_bool(val, b)) c.curfew = b; else bad("expected yes/no");
+        } else if (key == "curfew") {
+            // Night curfew auto-shutdown is mandatory and cannot be disabled.
+            c.curfew = true;
         } else if (key == "curfew_start" || key == "curfew_time") {
             int h = 0, m = 0;
             if (parse_time_hm(val, h, m)) { c.curfew_start_hour = h; c.curfew_start_min = m; } else bad("expected HH:MM (00:00..23:59)");

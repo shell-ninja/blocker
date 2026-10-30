@@ -183,7 +183,10 @@ static int cmd_install(const std::vector<std::string>& args) {
             popup_msg_set = true;
             if (!popup_set) popup = true;  // Passing a custom message implies popup should be enabled
         }
-        else if (a == "--no-curfew") { curfew = false; curfew_set = true; }
+        else if (a == "--no-curfew") {
+            std::fprintf(stderr, "blocker: night curfew auto-shutdown is mandatory and cannot be disabled\n");
+            return 2;
+        }
         else if (a == "--curfew") { curfew = true; curfew_set = true; }
         else if ((a == "--curfew-time" || a == "--curfew-start") && next(v)) {
             int h = 0, m = 0;

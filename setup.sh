@@ -10,7 +10,7 @@
 #
 # Options handled here:   -y/--yes  --build-only  --install-deps  --upgrade  --dry-run  -h/--help
 # Everything else is passed to `blocker install` (--mode, --delay-hours, --window-minutes,
-# --curfew-time HH:MM, --curfew-start HH:MM, --curfew-end HH:MM, --curfew / --no-curfew,
+# --curfew-time HH:MM, --curfew-start HH:MM, --curfew-end HH:MM (night curfew auto-shutdown is mandatory),
 # --reddit-block / --no-reddit-block, --ig-block / --no-ig-block,
 # --unblock DOMAIN,
 # --redirect-url URL, --no-redirect, --popup, --popup-message TEXT,
@@ -132,6 +132,7 @@ while [ $# -gt 0 ]; do
     --install-deps) DEPS=1 ;;
     --upgrade)      UPGRADE=1 ;;
     --dry-run)      DRY=1 ;;
+    --no-curfew)    die "Disabling Night Curfew auto-shutdown is not permitted (strictly enforced policy)." ;;
     -h|--help)      usage; exit 0 ;;
     --)             shift; INSTALL_ARGS+=("$@"); break ;;
     *)              INSTALL_ARGS+=("$1") ;;
@@ -139,6 +140,15 @@ while [ $# -gt 0 ]; do
   shift
 done
 has_arg() { local a; for a in ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}; do [ "$a" = "$1" ] && return 0; done; return 1; }
+
+if has_arg --no-curfew; then
+  die "Disabling Night Curfew auto-shutdown is not permitted (strictly enforced policy)."
+fi
+
+# Night Curfew auto-shutdown is mandatory: ensure --curfew is always passed to blocker install
+if ! has_arg --curfew; then
+  INSTALL_ARGS+=(--curfew)
+fi
 
 banner
 
@@ -274,23 +284,15 @@ fi
 
 if [ "$YES" = 0 ] && [ "$DRY" = 0 ]; then
   [ -t 0 ] || die "non-interactive session detected: pass --yes to confirm installation"
-  if [ "$UPGRADE" = 0 ] && ! has_arg --curfew && ! has_arg --no-curfew && ! has_arg --curfew-time && ! has_arg --curfew-start; then
+  if [ "$UPGRADE" = 0 ] && ! has_arg --curfew-time && ! has_arg --curfew-start; then
     printf "\n"
-    printf " ${C_CYAN}│${C_RESET}  ${C_BOLD}Night Curfew & Auto-Shutdown Configuration:${C_RESET}\n"
-    printf " ${C_CYAN}│${C_RESET}  ${C_MUTED}Automatically powers off PC to enforce sleep, sending warning notifications 30m before.${C_RESET}\n"
-    read -r -p "  Enable Night Curfew auto-shutdown? [Y/n] " ans_curfew
-    case "$ans_curfew" in
-      n|N|no|NO)
-        INSTALL_ARGS+=(--no-curfew)
-        ;;
-      *)
-        read -r -p "  Auto-shutdown time (HH:MM in 24h format, e.g. 23:00, 00:00) [00:00]: " ans_time
-        ans_time=${ans_time:-00:00}
-        read -r -p "  Curfew wake / end time (HH:MM in 24h format, e.g. 03:00, 06:00) [03:00]: " ans_end
-        ans_end=${ans_end:-03:00}
-        INSTALL_ARGS+=(--curfew-start "$ans_time" --curfew-end "$ans_end")
-        ;;
-    esac
+    printf " ${C_CYAN}│${C_RESET}  ${C_BOLD}Night Curfew & Auto-Shutdown Configuration:${C_RESET} ${C_GREEN}[MANDATORY]${C_RESET}\n"
+    printf " ${C_CYAN}│${C_RESET}  ${C_MUTED}Enforced: Automatically powers off PC to enforce healthy sleep. Cannot be disabled.${C_RESET}\n"
+    read -r -p "  Auto-shutdown time (HH:MM in 24h format, e.g. 23:00, 00:00) [00:00]: " ans_time
+    ans_time=${ans_time:-00:00}
+    read -r -p "  Curfew wake / end time (HH:MM in 24h format, e.g. 03:00, 06:00) [03:00]: " ans_end
+    ans_end=${ans_end:-03:00}
+    INSTALL_ARGS+=(--curfew-start "$ans_time" --curfew-end "$ans_end")
   fi
   printf "\n"
   read -r -p "  Proceed with installation? [y/N] " ans

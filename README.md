@@ -62,7 +62,7 @@ The script will:
 | `--curfew-time HH:MM` | Set auto-shutdown curfew time (e.g. `23:30` or `00:00`, default `00:00`) |
 | `--curfew-start HH:MM` | Alias for `--curfew-time` |
 | `--curfew-end HH:MM` | Set curfew wake/end time (e.g. `05:00`, default `03:00`) |
-| `--curfew / --no-curfew` | Enable or disable night curfew auto-shutdown |
+| `--curfew-time HH:MM` | Set night curfew shutdown time (mandatory, auto-shutdown enforced) |
 | `--reddit-block / --no-reddit-block` | Enable or disable Reddit NSFW & adult content blocking (default enabled) |
 | `--ig-block / --no-ig-block` | Enable or disable Instagram explore & search blocking (default enabled) |
 | `--no-firewall` | Skip the nftables DNS-bypass rules |

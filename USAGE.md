@@ -90,7 +90,7 @@ Useful options:
 | `--curfew-time HH:MM` | set auto-shutdown curfew time (e.g. `23:30` or `00:00`, default `00:00`) |
 | `--curfew-start HH:MM` | alias for `--curfew-time` |
 | `--curfew-end HH:MM` | set curfew wake/end time (e.g. `05:00`, default `03:00`) |
-| `--curfew / --no-curfew` | enable or disable night curfew auto-shutdown |
+| `--curfew-start / --curfew-end` | configure curfew auto-shutdown and wake window (mandatory, cannot be disabled) |
 | `--reddit-block / --no-reddit-block` | enable or disable Reddit NSFW & adult content blocking (default enabled) |
 | `--ig-block / --no-ig-block` | enable or disable Instagram explore & search blocking (default enabled) |
 | `--unblock DOMAIN` | unblock a domain by stripping block rules and adding to whitelist |
