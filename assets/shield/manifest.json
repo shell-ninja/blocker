@@ -1,6 +1,6 @@
 {
   "name": "Blocker Web Shield",
-  "version": "1.3",
+  "version": "1.4",
   "manifest_version": 3,
   "description": "Blocker In-Page UI and Keyword Shield for Instagram and Reddit",
   "content_scripts": [

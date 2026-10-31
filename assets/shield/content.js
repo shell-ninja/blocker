@@ -250,28 +250,8 @@
     checkRedditRoute();
     setInterval(checkRedditRoute, 300);
 
-    // Intercept click ONLY on specific links to blocked subreddits or search media tab
-    document.addEventListener('click', function(e) {
-      const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
-      if (a) {
-        const href = a.getAttribute('href') || '';
-        if (isBlockedRedditPath(href)) {
-          e.preventDefault();
-          e.stopPropagation();
-          window.location.replace('https://www.reddit.com/');
-          return;
-        }
-      }
-      const tab = e.target && e.target.closest ? e.target.closest('[role="tab"], rpl-tab') : null;
-      if (tab) {
-        const text = (tab.textContent || '').trim().toLowerCase();
-        if (text === 'media' && tab.closest('[role="tablist"], nav, [data-testid*="tab"]')) {
-          e.preventDefault();
-          e.stopPropagation();
-          window.location.replace('https://www.reddit.com/');
-        }
-      }
-    }, true);
+    // NOTE: ZERO click interceptor listeners are attached here!
+    // All normal Reddit mouse clicks, voting, expanding, comments, and links work 100% natively without any interference.
 
     // -------------------------------------------------------------------------
     // Bulletproof Switch & Setting Row Locator (with Shadow DOM Piercing)
@@ -415,6 +395,7 @@
       while ((textNode = walker.nextNode())) {
         const text = (textNode.nodeValue || '').trim().toLowerCase();
         if (
+          text === "show mature content (i'm over 18)" ||
           text.includes('show mature content') ||
           text.includes('see not safe for work mature') ||
           text.includes('willing to view adult content')
@@ -499,10 +480,6 @@
                 turnSwitchOn(sw);
                 syncServerPrefs(true);
               }
-              const btn = sw.inner || sw.host || sw;
-              if (btn && btn.style) {
-                btn.style.setProperty('pointer-events', 'none', 'important');
-              }
               break;
             }
             curr = curr.parentElement;
@@ -552,17 +529,6 @@
 
     // Hide Reddit Search Media Tab, Media Feed Container, and NSFW feed posts via CSS
     const redditCSS = `
-      /* Hide mature content setting row entirely via CSS */
-      div:has(> * > faceplate-switch[name="over_18"]),
-      div:has(> faceplate-switch[name="over_18"]),
-      [data-blocker-nsfw-row="true"] {
-        display: none !important;
-        visibility: hidden !important;
-        pointer-events: none !important;
-        height: 0px !important;
-        overflow: hidden !important;
-      }
-
       /* Hide Reddit Search Media Tab, feeds & buttons */
       a[href*="type=media"],
       a[href*="type=video"],
