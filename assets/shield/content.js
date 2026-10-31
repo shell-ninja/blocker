@@ -183,8 +183,6 @@
       const lower = p.toLowerCase();
       // Block over18 / NSFW route gateways
       if (lower.startsWith('/over18') || lower.startsWith('/r/over18') || lower.startsWith('/r/nsfw')) return true;
-      // Block standalone Reddit media viewer (/media or /media?url=...)
-      if (lower.startsWith('/media') || lower.includes('/media?') || lower.includes('/media/')) return true;
       // Block Reddit search media tab (type=media or type=video)
       if (lower.includes('type=media') || lower.includes('type=video')) return true;
       const sub = getSubredditFromUrl(p);
@@ -194,6 +192,7 @@
     function cleanSearchUrl(urlOrSearch) {
       return urlOrSearch
         .replace(/[?&]type=media(&|$)/, '$1')
+        .replace(/[?&]type=video(&|$)/, '$1')
         .replace(/[?&]include_over_18=[^&]*(&|$)/, '$1')
         .replace(/[?&]$/, '');
     }
@@ -201,7 +200,7 @@
     function checkRedditRoute() {
       const fullUrl = (window.location.pathname || '') + (window.location.search || '');
       // Strip include_over_18 or type=media from search URL immediately
-      if (window.location.search && (window.location.search.includes('include_over_18') || window.location.search.includes('type=media'))) {
+      if (window.location.search && (window.location.search.includes('include_over_18') || window.location.search.includes('type=media') || window.location.search.includes('type=video'))) {
         const clean = cleanSearchUrl(window.location.search);
         window.location.replace(window.location.pathname + (clean ? (clean.startsWith('?') ? clean : '?' + clean) : ''));
         return;
@@ -215,7 +214,7 @@
     const origPush = history.pushState;
     history.pushState = function(...args) {
       let url = args[2] ? String(args[2]) : '';
-      if (url.includes('include_over_18') || url.includes('type=media')) {
+      if (url.includes('include_over_18') || url.includes('type=media') || url.includes('type=video')) {
         url = cleanSearchUrl(url);
         args[2] = url;
       }
@@ -225,13 +224,13 @@
       }
       origPush.apply(this, args);
       checkRedditRoute();
-      enforceRedditSettings();
+      enforceAllRedditSettings();
     };
 
     const origReplace = history.replaceState;
     history.replaceState = function(...args) {
       let url = args[2] ? String(args[2]) : '';
-      if (url.includes('include_over_18') || url.includes('type=media')) {
+      if (url.includes('include_over_18') || url.includes('type=media') || url.includes('type=video')) {
         url = cleanSearchUrl(url);
         args[2] = url;
       }
@@ -241,23 +240,32 @@
       }
       origReplace.apply(this, args);
       checkRedditRoute();
-      enforceRedditSettings();
+      enforceAllRedditSettings();
     };
 
     window.addEventListener('popstate', function() {
       checkRedditRoute();
-      enforceRedditSettings();
+      enforceAllRedditSettings();
     });
     checkRedditRoute();
     setInterval(checkRedditRoute, 300);
 
-    // Intercept click on any link to blocked subreddits or media section
+    // Intercept click ONLY on specific links to blocked subreddits or search media tab
     document.addEventListener('click', function(e) {
-      const a = e.target && e.target.closest ? e.target.closest('a, button, [role="tab"]') : null;
+      const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
       if (a) {
-        const href = a.getAttribute('href') || a.pathname || '';
-        const text = (a.textContent || '').trim().toLowerCase();
-        if (isBlockedRedditPath(href) || (text === 'media' && a.closest('[role="tablist"], nav, [data-testid*="tab"]'))) {
+        const href = a.getAttribute('href') || '';
+        if (isBlockedRedditPath(href)) {
+          e.preventDefault();
+          e.stopPropagation();
+          window.location.replace('https://www.reddit.com/');
+          return;
+        }
+      }
+      const tab = e.target && e.target.closest ? e.target.closest('[role="tab"], rpl-tab') : null;
+      if (tab) {
+        const text = (tab.textContent || '').trim().toLowerCase();
+        if (text === 'media' && tab.closest('[role="tablist"], nav, [data-testid*="tab"]')) {
           e.preventDefault();
           e.stopPropagation();
           window.location.replace('https://www.reddit.com/');
@@ -266,7 +274,7 @@
     }, true);
 
     // -------------------------------------------------------------------------
-    // One-Way Ratchet Switch Controller (with Shadow DOM Piercing)
+    // Bulletproof Switch & Setting Row Locator (with Shadow DOM Piercing)
     // -------------------------------------------------------------------------
     function findSwitchInContainer(container) {
       if (!container) return null;
@@ -341,9 +349,6 @@
       const inner = swObj.inner || swObj;
       const host = swObj.host || null;
 
-      if (inner && inner.style) inner.style.pointerEvents = 'auto';
-      if (host && host.style) host.style.pointerEvents = 'auto';
-
       try {
         if (typeof inner.click === 'function') inner.click();
       } catch (_) {}
@@ -366,6 +371,7 @@
           t.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         } catch (_) {}
       }
+      syncServerPrefs(true);
     }
 
     function turnSwitchOn(swObj) {
@@ -395,64 +401,58 @@
           t.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         } catch (_) {}
       }
+      syncServerPrefs(true);
     }
 
-    function lockSwitchOff(swObj) {
-      if (!swObj) return;
-      const inner = swObj.inner || swObj;
-      const host = swObj.host || null;
-      const targets = (host && host !== inner) ? [inner, host] : [inner];
-      for (let i = 0; i < targets.length; i++) {
-        const t = targets[i];
-        if (!t) continue;
-        try {
-          t.style.setProperty('cursor', 'not-allowed', 'important');
-          t.style.setProperty('opacity', '0.4', 'important');
-        } catch (_) {}
-      }
-    }
-
-    // 1. Force OFF "Show mature content (I'm over 18)"
-    function enforceRedditMatureSettings() {
+    // 1. Permanently remove and disable "Show mature content (I'm over 18)" row on settings/preferences
+    function blockMatureContentOption() {
       const root = document.body || document.documentElement;
       if (!root) return;
 
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
       let textNode;
-      const candidates = [];
 
       while ((textNode = walker.nextNode())) {
         const text = (textNode.nodeValue || '').trim().toLowerCase();
-        if (!text) continue;
         if (
           text.includes('show mature content') ||
-          text.includes('see not safe for work') ||
-          (text.includes('mature content') && text.includes('18')) ||
+          text.includes('see not safe for work mature') ||
           text.includes('willing to view adult content')
         ) {
-          candidates.push(textNode.parentElement);
-        }
-      }
+          let curr = textNode.parentElement;
+          let targetRow = null;
 
-      for (let i = 0; i < candidates.length; i++) {
-        let curr = candidates[i];
-        let swObj = null;
-
-        for (let depth = 0; depth < 12 && curr && curr !== root && curr !== document.body; depth++) {
-          const found = findSwitchInContainer(curr);
-          if (found) {
-            swObj = found;
-            break;
+          // Traverse upward to locate the exact single setting row container
+          while (curr && curr !== root && curr !== document.body) {
+            const switches = curr.querySelectorAll('faceplate-switch, shreddit-switch, button[role="switch"], input[type="checkbox"]');
+            if (switches.length === 1) {
+              targetRow = curr;
+            } else if (switches.length > 1) {
+              // Reached parent containing multiple settings, stop climbing
+              break;
+            }
+            curr = curr.parentElement;
           }
-          curr = curr.parentElement;
-        }
 
-        if (swObj) {
-          if (isSwitchChecked(swObj)) {
-            turnSwitchOff(swObj);
-            syncServerPrefs(true);
-          } else {
-            lockSwitchOff(swObj);
+          if (targetRow) {
+            const sw = findSwitchInContainer(targetRow);
+            if (sw && isSwitchChecked(sw)) {
+              turnSwitchOff(sw);
+              syncServerPrefs(true);
+            }
+            targetRow.remove();
+            return;
+          } else if (textNode.parentElement) {
+            const fallbackRow = textNode.parentElement.closest('[role="row"], li, tr') || textNode.parentElement;
+            if (fallbackRow && fallbackRow !== root && fallbackRow !== document.body) {
+              const sw = findSwitchInContainer(fallbackRow);
+              if (sw && isSwitchChecked(sw)) {
+                turnSwitchOff(sw);
+                syncServerPrefs(true);
+              }
+              fallbackRow.remove();
+              return;
+            }
           }
         }
       }
@@ -465,6 +465,8 @@
           syncServerPrefs(true);
         }
         oldOver18.disabled = true;
+        const tr = oldOver18.closest('tr') || oldOver18.parentElement;
+        if (tr) tr.remove();
       }
       const oldSearchNsfw = document.querySelector('input[name="search_include_over_18"], #search_include_over_18');
       if (oldSearchNsfw) {
@@ -473,10 +475,12 @@
           syncServerPrefs(true);
         }
         oldSearchNsfw.disabled = true;
+        const tr = oldSearchNsfw.closest('tr') || oldSearchNsfw.parentElement;
+        if (tr) tr.remove();
       }
     }
 
-    // 2. Force ON "Safe Search" on Reddit Search and permanently lock it ON
+    // 2. Force ON "Safe Search" on Reddit Search and lock it ON
     function enforceRedditSafeSearch() {
       const root = document.body || document.documentElement;
       if (!root) return;
@@ -486,14 +490,18 @@
 
       while ((textNode = walker.nextNode())) {
         const text = (textNode.nodeValue || '').trim().toLowerCase();
-        if (text === 'safe search' || text === 'safesearch' || text.includes('safe search')) {
+        if (text === 'safe search' || text === 'safesearch') {
           let curr = textNode.parentElement;
-          for (let depth = 0; depth < 10 && curr && curr !== root && curr !== document.body; depth++) {
-            const swObj = findSwitchInContainer(curr);
-            if (swObj) {
-              if (!isSwitchChecked(swObj)) {
-                turnSwitchOn(swObj);
+          for (let depth = 0; depth < 8 && curr && curr !== root && curr !== document.body; depth++) {
+            const sw = findSwitchInContainer(curr);
+            if (sw) {
+              if (!isSwitchChecked(sw)) {
+                turnSwitchOn(sw);
                 syncServerPrefs(true);
+              }
+              const btn = sw.inner || sw.host || sw;
+              if (btn && btn.style) {
+                btn.style.setProperty('pointer-events', 'none', 'important');
               }
               break;
             }
@@ -504,85 +512,10 @@
     }
 
     function enforceAllRedditSettings() {
-      enforceRedditMatureSettings();
+      blockMatureContentOption();
       enforceRedditSafeSearch();
     }
-
-    // One-Way Ratchet Click Guard:
-    // - Mature content switch: ALLOW click if currently ON (to turn OFF); BLOCK click if currently OFF (to prevent turning ON).
-    // - Safe search switch: ALLOW click if currently OFF (to turn ON); BLOCK click if currently ON (to prevent turning OFF).
-    window.addEventListener('click', function(e) {
-      const path = (typeof e.composedPath === 'function') ? e.composedPath() : [];
-      for (let i = 0; i < path.length; i++) {
-        const node = path[i];
-        if (node && node.nodeType === 1) {
-          const text = (node.textContent || '').trim().toLowerCase();
-
-          // 1. Mature Content setting row / toggle
-          if (
-            text.includes('show mature content') ||
-            text.includes('see not safe for work') ||
-            (text.includes('mature content') && text.includes('18')) ||
-            text.includes('willing to view adult content')
-          ) {
-            let curr = node;
-            let sw = null;
-            for (let d = 0; d < 8 && curr && curr !== document.body; d++) {
-              sw = findSwitchInContainer(curr);
-              if (sw) break;
-              curr = curr.parentElement;
-            }
-
-            if (sw) {
-              const isCurrentlyOn = isSwitchChecked(sw);
-              if (isCurrentlyOn) {
-                // Currently ON: Click is turning it OFF -> ALLOW!
-                return true;
-              } else {
-                // Currently OFF: Click would turn it ON -> BLOCK!
-                e.preventDefault();
-                e.stopPropagation();
-                e.stopImmediatePropagation();
-                return false;
-              }
-            }
-          }
-
-          // 2. Safe Search setting row / toggle
-          if (text === 'safe search' || text === 'safesearch') {
-            let curr = node;
-            let sw = null;
-            for (let d = 0; d < 8 && curr && curr !== document.body; d++) {
-              sw = findSwitchInContainer(curr);
-              if (sw) break;
-              curr = curr.parentElement;
-            }
-
-            if (sw) {
-              const isCurrentlyOn = isSwitchChecked(sw);
-              if (!isCurrentlyOn) {
-                // Currently OFF: Click turns Safe Search ON -> ALLOW!
-                return true;
-              } else {
-                // Currently ON: Click would turn Safe Search OFF -> BLOCK!
-                e.preventDefault();
-                e.stopPropagation();
-                e.stopImmediatePropagation();
-                return false;
-              }
-            }
-          }
-
-          // 3. Media search tabs -> ALWAYS BLOCK
-          if (text === 'media' && node.closest && node.closest('[role="tablist"], nav, [data-testid*="tab"]')) {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            return false;
-          }
-        }
-      }
-    }, true);
+    const enforceRedditSettings = enforceAllRedditSettings;
 
     // Remove Media tabs from search navigation dynamically
     function removeMediaTabs() {
@@ -619,6 +552,17 @@
 
     // Hide Reddit Search Media Tab, Media Feed Container, and NSFW feed posts via CSS
     const redditCSS = `
+      /* Hide mature content setting row entirely via CSS */
+      div:has(> * > faceplate-switch[name="over_18"]),
+      div:has(> faceplate-switch[name="over_18"]),
+      [data-blocker-nsfw-row="true"] {
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+        height: 0px !important;
+        overflow: hidden !important;
+      }
+
       /* Hide Reddit Search Media Tab, feeds & buttons */
       a[href*="type=media"],
       a[href*="type=video"],
