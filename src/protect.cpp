@@ -377,16 +377,7 @@ static std::vector<std::string> get_blocked_urls(bool firefox, const Config& cfg
             }
         }
 
-        const char* subs[] = {
-            "nsfw", "gonewild", "porn", "hentai", "rule34", "xxx", "erotic", "sexy",
-            "boobs", "tits", "ass", "pussy", "dick", "cock", "nude", "nudes",
-            "onlyfans", "leaks", "milf", "bdsm", "fetish", "cuckold", "blowjob",
-            "cum", "anal", "vagina", "penis", "ecchi", "yiff", "futanari", "trap",
-            "femboys", "sissies", "amateur", "hardcore", "softcore", "camgirls",
-            "chaturbate", "playboy", "redgifs", "RealGirls", "BustyPetite",
-            "LegalTeens", "holdthemoan", "godplus", "grool", "collegesluts",
-            "dirtypens", "dirtysnapchat", "jacking"
-        };
+#include "nsfw_subreddits.inc"
         const char* search_terms[] = {
             "nsfw", "porn", "xxx", "hentai", "erotic", "sexy", "gonewild", "nude",
             "boobs", "tits", "ass", "pussy", "dick", "cock", "milf", "anal",
@@ -410,15 +401,12 @@ static std::vector<std::string> get_blocked_urls(bool firefox, const Config& cfg
                 list.push_back(std::string("*://*.reddit.com/svc/shreddit*") + term + "*");
                 list.push_back(std::string("*://reddit.com/svc/shreddit*") + term + "*");
             }
-            for (const char* sub : subs) {
-                list.push_back(std::string("*://*.reddit.com/r/") + sub + "*");
-                list.push_back(std::string("*://reddit.com/r/") + sub + "*");
-                list.push_back(std::string("*://*.reddit.com/svc/shreddit/r/") + sub + "*");
-                list.push_back(std::string("*://reddit.com/svc/shreddit/r/") + sub + "*");
-                list.push_back(std::string("*://*.reddit.com/svc/shreddit/community-more-posts/r/") + sub + "*");
-                list.push_back(std::string("*://reddit.com/svc/shreddit/community-more-posts/r/") + sub + "*");
-                list.push_back(std::string("*://*.reddit.com/svc/shreddit/comments/r/") + sub + "*");
-                list.push_back(std::string("*://reddit.com/svc/shreddit/comments/r/") + sub + "*");
+            for (size_t i = 0; i < kNSFWSubredditsCount; ++i) {
+                const char* sub = kNSFWSubreddits[i];
+                list.push_back(std::string("*://*.reddit.com/r/") + sub + "/*");
+                list.push_back(std::string("*://reddit.com/r/") + sub + "/*");
+                list.push_back(std::string("*://*.reddit.com/svc/shreddit/r/") + sub + "/*");
+                list.push_back(std::string("*://reddit.com/svc/shreddit/r/") + sub + "/*");
             }
         } else {
             std::vector<std::string> base = {
@@ -438,20 +426,10 @@ static std::vector<std::string> get_blocked_urls(bool firefox, const Config& cfg
                 list.push_back(std::string("reddit.com/search/@q=") + term + "*");
                 list.push_back(std::string("reddit.com/svc/shreddit@q=") + term + "*");
             }
-            for (const char* sub : subs) {
-                std::string s = sub;
-                std::string s_upper = s;
-                for (char& c : s_upper) c = char(toupper(c));
-                std::string s_cap = s;
-                if (!s_cap.empty()) s_cap[0] = char(toupper(s_cap[0]));
-
-                for (const std::string& name : {s, s_upper, s_cap}) {
-                    list.push_back(std::string("reddit.com/r/") + name);
-                    list.push_back(std::string("reddit.com/svc/shreddit/r/") + name);
-                    list.push_back(std::string("reddit.com/svc/shreddit/community-more-posts/r/") + name);
-                    list.push_back(std::string("reddit.com/svc/shreddit/comments/r/") + name);
-                    list.push_back(std::string("reddit.com/api/v1/r/") + name);
-                }
+            for (size_t i = 0; i < kNSFWSubredditsCount; ++i) {
+                const char* sub = kNSFWSubreddits[i];
+                list.push_back(std::string("reddit.com/r/") + sub);
+                list.push_back(std::string("reddit.com/svc/shreddit/r/") + sub);
             }
         }
     }
