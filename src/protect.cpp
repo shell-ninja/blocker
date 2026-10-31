@@ -388,11 +388,14 @@ static std::vector<std::string> get_blocked_urls(bool firefox, const Config& cfg
             std::vector<std::string> base = {
                 "*://*.reddit.com/over18*", "*://reddit.com/over18*",
                 "*://*.reddit.com/r/over18*", "*://reddit.com/r/over18*",
+                "*://*.reddit.com/media*", "*://reddit.com/media*",
                 "*://*.reddit.com/prefs*", "*://reddit.com/prefs*",
                 "*://*.reddit.com/settings/feed*", "*://reddit.com/settings/feed*",
                 "*://*.reddit.com/api/v1/me/prefs*", "*://reddit.com/api/v1/me/prefs*",
                 "*://*.reddit.com/search*include_over_18*", "*://reddit.com/search*include_over_18*",
-                "*://*.reddit.com/svc/shreddit*include_over_18*", "*://reddit.com/svc/shreddit*include_over_18*"
+                "*://*.reddit.com/svc/shreddit*include_over_18*", "*://reddit.com/svc/shreddit*include_over_18*",
+                "*://*.reddit.com/search*type=media*", "*://reddit.com/search*type=media*",
+                "*://*.reddit.com/svc/shreddit*type=media*", "*://reddit.com/svc/shreddit*type=media*"
             };
             list.insert(list.end(), base.begin(), base.end());
             for (const char* term : search_terms) {
@@ -413,12 +416,16 @@ static std::vector<std::string> get_blocked_urls(bool firefox, const Config& cfg
                 "reddit.com/over18",
                 "reddit.com/r/over18",
                 "reddit.com/svc/shreddit/over18",
+                "reddit.com/media",
                 "reddit.com/prefs",
                 "reddit.com/settings/feed",
                 "reddit.com/api/v1/me/prefs",
                 "reddit.com/search@include_over_18=*",
                 "reddit.com/search/@include_over_18=*",
-                "reddit.com/svc/shreddit@include_over_18=*"
+                "reddit.com/svc/shreddit@include_over_18=*",
+                "reddit.com/search@type=media*",
+                "reddit.com/search/@type=media*",
+                "reddit.com/svc/shreddit@type=media*"
             };
             list.insert(list.end(), base.begin(), base.end());
             for (const char* term : search_terms) {
