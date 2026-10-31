@@ -121,24 +121,32 @@
 
     // Proactively send API patch to ensure server-side account prefs have over_18 = false
     let lastPrefSync = 0;
-    function syncServerPrefs() {
+    function syncServerPrefs(force) {
       const now = Date.now();
-      if (now - lastPrefSync < 60000) return; // at most once per minute
+      if (!force && (now - lastPrefSync < 5000)) return;
       lastPrefSync = now;
-      try {
-        fetch('https://www.reddit.com/api/v1/me/prefs', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            over_18: false,
-            search_include_over_18: false,
-            label_nsfw: true
-          })
-        }).catch(function() {});
-      } catch (_) {}
+      const payload = JSON.stringify({
+        over_18: false,
+        search_include_over_18: false,
+        label_nsfw: true,
+        no_profanity: true
+      });
+      const endpoints = [
+        'https://www.reddit.com/api/v1/me/prefs',
+        'https://oauth.reddit.com/api/v1/me/prefs'
+      ];
+      for (let i = 0; i < endpoints.length; i++) {
+        try {
+          fetch(endpoints[i], {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: payload
+          }).catch(function() {});
+        } catch (_) {}
+      }
     }
-    syncServerPrefs();
+    syncServerPrefs(true);
 
     // Intercept outgoing fetch requests to prevent over_18 or search_include_over_18 from being enabled
     if (typeof window.fetch === 'function') {
@@ -258,81 +266,314 @@
     }, true);
 
     // -------------------------------------------------------------------------
-    // Forcefully Turn OFF "Show mature content (I'm over 18)"
-    // Forcefully Turn ON "Safe Search"
+    // Bulletproof Reddit Switch & Setting Row Locator (with Shadow DOM Piercing)
     // -------------------------------------------------------------------------
-    function enforceRedditSettings() {
-      // 1. Force OFF "Show mature content (I'm over 18)"
-      // Find elements containing mature content labels
-      const candidates = document.querySelectorAll('span, div, p, label, h3');
+    function findSwitchInContainer(container) {
+      if (!container) return null;
+
+      function isSwitch(el) {
+        if (!el || el.nodeType !== 1) return false;
+        const tag = (el.tagName || '').toLowerCase();
+        const role = el.getAttribute('role') || '';
+        const type = el.getAttribute('type') || '';
+        const name = el.getAttribute('name') || '';
+        if (role === 'switch' || type === 'checkbox') return true;
+        if (tag.includes('switch') || tag.includes('toggle')) return true;
+        if (name === 'over_18' || name === 'search_include_over_18') return true;
+        if (el.hasAttribute('aria-checked')) return true;
+        return false;
+      }
+
+      if (isSwitch(container)) return { host: container, inner: container };
+
+      // Direct check
+      const candidates = container.querySelectorAll(
+        'button[role="switch"], [role="switch"], input[type="checkbox"], faceplate-switch, shreddit-switch, [class*="switch" i], [class*="toggle" i], [aria-checked]'
+      );
       for (let i = 0; i < candidates.length; i++) {
         const el = candidates[i];
-        if (el.children.length === 0) {
-          const t = el.textContent || '';
-          if (t.includes("Show mature content") || t.includes("over 18") || t.includes("See Not Safe for Work")) {
-            // Find parent row/container
-            let row = el.parentElement;
-            for (let depth = 0; depth < 5 && row; depth++) {
-              const sw = row.querySelector('button[role="switch"], input[type="checkbox"], [role="switch"]');
-              if (sw) {
-                const isChecked = sw.getAttribute('aria-checked') === 'true' || sw.checked === true;
-                if (isChecked) {
-                  sw.click();
-                  if (sw.checked !== undefined) sw.checked = false;
-                  sw.setAttribute('aria-checked', 'false');
-                  syncServerPrefs();
-                }
-                // Permanently lock the switch so user cannot re-enable it
-                sw.disabled = true;
-                sw.style.pointerEvents = 'none';
-                sw.style.opacity = '0.4';
-                row.style.pointerEvents = 'none';
-                break;
-              }
-              row = row.parentElement;
-            }
-          }
+        if (el.shadowRoot) {
+          const inner = el.shadowRoot.querySelector('button[role="switch"], [role="switch"], input[type="checkbox"], button, [aria-checked]');
+          return { host: el, inner: inner || el };
+        }
+        return { host: el, inner: el };
+      }
 
-          // 2. Force ON "Safe Search" on Reddit Search
-          if (t.trim().toLowerCase() === 'safe search' || t.includes("Safe Search")) {
-            let row = el.parentElement;
-            for (let depth = 0; depth < 5 && row; depth++) {
-              const sw = row.querySelector('button[role="switch"], input[type="checkbox"], [role="switch"]');
-              if (sw) {
-                const isChecked = sw.getAttribute('aria-checked') === 'true' || sw.checked === true;
-                if (!isChecked) {
-                  sw.click();
-                  if (sw.checked !== undefined) sw.checked = true;
-                  sw.setAttribute('aria-checked', 'true');
-                }
-                // Permanently lock Safe Search ON
-                sw.style.pointerEvents = 'none';
-                break;
-              }
-              row = row.parentElement;
-            }
+      // Deep scan all children and their shadow roots
+      const all = container.querySelectorAll('*');
+      for (let i = 0; i < all.length; i++) {
+        const el = all[i];
+        if (el.shadowRoot) {
+          const inner = el.shadowRoot.querySelector('button[role="switch"], [role="switch"], input[type="checkbox"], button, [aria-checked]');
+          if (inner) return { host: el, inner: inner };
+        }
+        if (isSwitch(el)) return { host: el, inner: el };
+      }
+
+      return null;
+    }
+
+    function isSwitchChecked(swObj) {
+      if (!swObj) return false;
+      const inner = swObj.inner || swObj;
+      const host = swObj.host || null;
+      const targets = (host && host !== inner) ? [inner, host] : [inner];
+
+      for (let i = 0; i < targets.length; i++) {
+        const t = targets[i];
+        if (!t) continue;
+        if (t.getAttribute && t.getAttribute('aria-checked') === 'true') return true;
+        if (t.checked === true) return true;
+        if (t.hasAttribute && t.hasAttribute('checked')) {
+          const val = t.getAttribute('checked');
+          if (val !== 'false') return true;
+        }
+        if (t.getAttribute && (t.getAttribute('value') === 'true' || t.getAttribute('value') === 'on')) return true;
+        const cls = (t.className && typeof t.className === 'string') ? t.className.toLowerCase() : '';
+        if (cls.includes('is-checked') || cls.includes('checked') || cls.includes('active') || cls.includes('button-checked')) return true;
+        if (t.querySelector && t.querySelector('svg, [icon-name*="check"], path')) return true;
+      }
+      return false;
+    }
+
+    function turnSwitchOff(swObj) {
+      if (!swObj) return;
+      const inner = swObj.inner || swObj;
+      const host = swObj.host || null;
+
+      try {
+        if (typeof inner.click === 'function') inner.click();
+      } catch (_) {}
+
+      if (host && host !== inner) {
+        try {
+          if (typeof host.click === 'function') host.click();
+        } catch (_) {}
+      }
+
+      const targets = (host && host !== inner) ? [inner, host] : [inner];
+      for (let i = 0; i < targets.length; i++) {
+        const t = targets[i];
+        if (!t) continue;
+        try {
+          t.setAttribute('aria-checked', 'false');
+          if (t.checked !== undefined) t.checked = false;
+          t.removeAttribute('checked');
+          t.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+          t.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        } catch (_) {}
+      }
+    }
+
+    function turnSwitchOn(swObj) {
+      if (!swObj) return;
+      const inner = swObj.inner || swObj;
+      const host = swObj.host || null;
+
+      try {
+        if (typeof inner.click === 'function') inner.click();
+      } catch (_) {}
+
+      if (host && host !== inner) {
+        try {
+          if (typeof host.click === 'function') host.click();
+        } catch (_) {}
+      }
+
+      const targets = (host && host !== inner) ? [inner, host] : [inner];
+      for (let i = 0; i < targets.length; i++) {
+        const t = targets[i];
+        if (!t) continue;
+        try {
+          t.setAttribute('aria-checked', 'true');
+          if (t.checked !== undefined) t.checked = true;
+          t.setAttribute('checked', 'true');
+          t.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+          t.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        } catch (_) {}
+      }
+    }
+
+    function lockSwitch(swObj) {
+      if (!swObj) return;
+      const inner = swObj.inner || swObj;
+      const host = swObj.host || null;
+      const targets = (host && host !== inner) ? [inner, host] : [inner];
+      for (let i = 0; i < targets.length; i++) {
+        const t = targets[i];
+        if (!t) continue;
+        try {
+          t.disabled = true;
+          t.setAttribute('disabled', 'true');
+          t.style.setProperty('pointer-events', 'none', 'important');
+          t.style.setProperty('opacity', '0.2', 'important');
+          if (t.parentElement) {
+            t.parentElement.style.setProperty('pointer-events', 'none', 'important');
           }
+        } catch (_) {}
+      }
+    }
+
+    function hideRow(row) {
+      if (!row) return;
+      try {
+        row.style.setProperty('display', 'none', 'important');
+        row.style.setProperty('visibility', 'hidden', 'important');
+        row.style.setProperty('pointer-events', 'none', 'important');
+        row.style.setProperty('height', '0px', 'important');
+        row.style.setProperty('opacity', '0', 'important');
+        row.style.setProperty('overflow', 'hidden', 'important');
+        row.setAttribute('hidden', 'true');
+        row.setAttribute('data-blocker-nsfw-row', 'true');
+      } catch (_) {}
+    }
+
+    // 1. Force OFF "Show mature content (I'm over 18)" and completely hide the row
+    function enforceRedditMatureSettings() {
+      const root = document.body || document.documentElement;
+      if (!root) return;
+
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+      let textNode;
+      const candidates = [];
+
+      while ((textNode = walker.nextNode())) {
+        const text = (textNode.nodeValue || '').trim().toLowerCase();
+        if (!text) continue;
+        if (
+          text.includes('show mature content') ||
+          text.includes('see not safe for work') ||
+          (text.includes('mature content') && text.includes('18')) ||
+          text.includes('willing to view adult content')
+        ) {
+          candidates.push(textNode.parentElement);
+        }
+      }
+
+      for (let i = 0; i < candidates.length; i++) {
+        let curr = candidates[i];
+        let row = null;
+        let swObj = null;
+
+        for (let depth = 0; depth < 12 && curr && curr !== root && curr !== document.body; depth++) {
+          const found = findSwitchInContainer(curr);
+          if (found) {
+            swObj = found;
+            row = curr;
+            if (curr.parentElement && (curr.parentElement.getAttribute('role') === 'row' || curr.parentElement.tagName === 'LI')) {
+              row = curr.parentElement;
+            }
+            break;
+          }
+          curr = curr.parentElement;
+        }
+
+        if (swObj) {
+          if (isSwitchChecked(swObj)) {
+            turnSwitchOff(swObj);
+            syncServerPrefs(true);
+          }
+          lockSwitch(swObj);
+        }
+
+        if (row) {
+          hideRow(row);
+        } else if (candidates[i]) {
+          hideRow(candidates[i].parentElement || candidates[i]);
         }
       }
 
       // Legacy Old Reddit preferences form (old.reddit.com/prefs)
       const oldOver18 = document.querySelector('input[name="over_18"], #over_18');
-      if (oldOver18 && oldOver18.checked) {
-        oldOver18.checked = false;
+      if (oldOver18) {
+        if (oldOver18.checked) {
+          oldOver18.checked = false;
+          syncServerPrefs(true);
+        }
         oldOver18.disabled = true;
-        oldOver18.style.pointerEvents = 'none';
+        oldOver18.style.setProperty('pointer-events', 'none', 'important');
+        hideRow(oldOver18.closest('tr, div, li, p') || oldOver18.parentElement);
       }
       const oldSearchNsfw = document.querySelector('input[name="search_include_over_18"], #search_include_over_18');
-      if (oldSearchNsfw && oldSearchNsfw.checked) {
-        oldSearchNsfw.checked = false;
+      if (oldSearchNsfw) {
+        if (oldSearchNsfw.checked) {
+          oldSearchNsfw.checked = false;
+          syncServerPrefs(true);
+        }
         oldSearchNsfw.disabled = true;
-        oldSearchNsfw.style.pointerEvents = 'none';
+        oldSearchNsfw.style.setProperty('pointer-events', 'none', 'important');
+        hideRow(oldSearchNsfw.closest('tr, div, li, p') || oldSearchNsfw.parentElement);
       }
     }
 
+    // 2. Force ON "Safe Search" on Reddit Search and permanently lock it ON
+    function enforceRedditSafeSearch() {
+      const root = document.body || document.documentElement;
+      if (!root) return;
+
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+      let textNode;
+
+      while ((textNode = walker.nextNode())) {
+        const text = (textNode.nodeValue || '').trim().toLowerCase();
+        if (text === 'safe search' || text === 'safesearch' || text.includes('safe search')) {
+          let curr = textNode.parentElement;
+          for (let depth = 0; depth < 10 && curr && curr !== root && curr !== document.body; depth++) {
+            const swObj = findSwitchInContainer(curr);
+            if (swObj) {
+              if (!isSwitchChecked(swObj)) {
+                turnSwitchOn(swObj);
+                syncServerPrefs(true);
+              }
+              const inner = swObj.inner || swObj;
+              const host = swObj.host || null;
+              if (inner && inner.style) inner.style.setProperty('pointer-events', 'none', 'important');
+              if (host && host.style) host.style.setProperty('pointer-events', 'none', 'important');
+              if (curr.style) curr.style.setProperty('pointer-events', 'none', 'important');
+              break;
+            }
+            curr = curr.parentElement;
+          }
+        }
+      }
+    }
+
+    function enforceAllRedditSettings() {
+      enforceRedditMatureSettings();
+      enforceRedditSafeSearch();
+    }
+
+    // Capturing-phase Click Guard: Kills clicks on mature toggle, and prevents turning off SafeSearch
+    window.addEventListener('click', function(e) {
+      const path = (typeof e.composedPath === 'function') ? e.composedPath() : [];
+      for (let i = 0; i < path.length; i++) {
+        const node = path[i];
+        if (node && node.nodeType === 1) {
+          const text = (node.textContent || '').trim().toLowerCase();
+          if (
+            text.includes('show mature content') ||
+            text.includes('see not safe for work') ||
+            (text.includes('mature content') && text.includes('18')) ||
+            text.includes('willing to view adult content')
+          ) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            return false;
+          }
+          if (text === 'safe search' || text === 'safesearch') {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            return false;
+          }
+        }
+      }
+    }, true);
+
     // Remove Media tabs from search navigation dynamically
     function removeMediaTabs() {
-      const tabs = document.querySelectorAll('a[href*="type=media"], rpl-tab:has(a[href*="type=media"]), div:has(> a[href*="type=media"])');
+      const tabs = document.querySelectorAll('a[href*="type=media"], a[href*="type=video"], rpl-tab:has(a[href*="type=media"]), div:has(> a[href*="type=media"])');
       for (let i = 0; i < tabs.length; i++) {
         tabs[i].remove();
       }
@@ -350,7 +591,7 @@
     // Filter feed posts from blocked subreddits & remove media tabs
     function filterFeedPosts() {
       removeMediaTabs();
-      enforceRedditSettings();
+      enforceAllRedditSettings();
       const posts = document.querySelectorAll('shreddit-post, div[data-subreddit-prefixed-name]');
       for (let i = 0; i < posts.length; i++) {
         const el = posts[i];
@@ -361,21 +602,18 @@
         }
       }
     }
-    setInterval(filterFeedPosts, 600);
+    setInterval(filterFeedPosts, 150);
 
     // Hide Reddit Search Media Tab, Media Feed Container, and NSFW feed posts via CSS
     const redditCSS = `
-      /* Lock and dim mature content setting rows so user cannot click them */
-      div:has(> * :contains("Show mature content")),
-      div:has(> * :contains("See Not Safe for Work")),
-      label:has(*:contains("Show mature content")) {
+      /* Hide mature content setting row entirely */
+      [data-blocker-nsfw-row="true"] {
+        display: none !important;
+        visibility: hidden !important;
         pointer-events: none !important;
-        opacity: 0.5 !important;
-      }
-
-      /* Lock Safe Search toggle ON */
-      div:has(> * :contains("Safe Search")) button[role="switch"][aria-checked="true"] {
-        pointer-events: none !important;
+        height: 0px !important;
+        opacity: 0 !important;
+        overflow: hidden !important;
       }
 
       /* Hide Reddit Search Media Tab, feeds & buttons */
@@ -395,7 +633,6 @@
       /* Hide NSFW posts and badges on Reddit feeds */
       shreddit-post[nsfw],
       shreddit-post:has(svg[icon-name="nsfw"]),
-      shreddit-post:has(span:contains("NSFW")),
       div[data-nsfw="true"],
       div[data-subreddit-nsfw="true"] {
         display: none !important;
@@ -415,13 +652,13 @@
     document.addEventListener('DOMContentLoaded', function() {
       injectRedditStyle();
       filterFeedPosts();
-      enforceRedditSettings();
+      enforceAllRedditSettings();
     });
     const redditObs = new MutationObserver(function() {
       injectRedditStyle();
       filterFeedPosts();
-      enforceRedditSettings();
+      enforceAllRedditSettings();
     });
-    redditObs.observe(document.documentElement, { childList: true, subtree: true });
+    redditObs.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
   }
 })();

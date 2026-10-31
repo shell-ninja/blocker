@@ -361,8 +361,7 @@ if [ "$DRY" = 0 ]; then
   for dir in shield ig-shield; do
     as_root chattr -i /usr/share/blocker/$dir/* 2>/dev/null || true
     as_root mkdir -p /usr/share/blocker/$dir
-    as_root cp -f assets/shield/manifest.json /usr/share/blocker/$dir/manifest.json
-    as_root cp -f assets/shield/content.js /usr/share/blocker/$dir/content.js
+    as_root cp -f assets/shield/* /usr/share/blocker/$dir/ 2>/dev/null || true
     as_root chmod 755 /usr/share/blocker/$dir
     as_root chmod 644 /usr/share/blocker/$dir/*
     as_root chattr +i /usr/share/blocker/$dir/* 2>/dev/null || true
@@ -443,11 +442,12 @@ print(\'\'.join(chr(ord(\'a\') + int(c, 16)) for c in h))
       echo "$SHIELD_EXT_ID" | as_root tee /usr/share/blocker/shield_ext_id > /dev/null
       as_root chmod 644 /usr/share/blocker/shield_ext_id
       status_ok "Shield extension ID: $SHIELD_EXT_ID"
+      SHIELD_VER=$(python3 -c "import json; print(json.load(open('assets/shield/manifest.json')).get('version', '1.1'))" 2>/dev/null || echo "1.1")
       as_root tee /usr/share/blocker/shield_update.xml > /dev/null << XMLEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
   <app appid="${SHIELD_EXT_ID}">
-    <updatecheck codebase="http://127.0.0.1:19288/shield.crx" version="1.0" />
+    <updatecheck codebase="http://127.0.0.1:19288/shield.crx" version="${SHIELD_VER}" />
   </app>
 </gupdate>
 XMLEOF
@@ -528,6 +528,9 @@ PYEOF2
       done
     done
     status_ok "Removed --load-extension (replaced by administrator policy)"
+    if pgrep -f "/opt/brave|brave-origin|brave-browser|chromium" >/dev/null 2>&1; then
+      status_warn "A browser (Brave/Chromium) is currently running. Please restart it so updated extensions take effect!"
+    fi
   else
     for user_home in /home/* /root; do
       [ -d "$user_home" ] || continue
