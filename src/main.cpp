@@ -145,7 +145,7 @@ static int cmd_install(const std::vector<std::string>& args) {
     bool reddit_block = true, reddit_block_set = false;
     bool upgrade = false;
     std::vector<std::string> unblock_items;
-    int curfew_start_h = 0, curfew_start_m = 0, curfew_end_h = 3, curfew_end_m = 0;
+    int curfew_start_h = 1, curfew_start_m = 0, curfew_end_h = 4, curfew_end_m = 0;
     bool curfew_start_set = false, curfew_end_set = false;
     std::string popup_message, redirect_url;
     std::string upstream = "1.1.1.3, 1.0.0.3";

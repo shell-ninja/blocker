@@ -288,10 +288,10 @@ if [ "$YES" = 0 ] && [ "$DRY" = 0 ]; then
     printf "\n"
     printf " ${C_CYAN}│${C_RESET}  ${C_BOLD}Night Curfew & Auto-Shutdown Configuration:${C_RESET} ${C_GREEN}[MANDATORY]${C_RESET}\n"
     printf " ${C_CYAN}│${C_RESET}  ${C_MUTED}Enforced: Automatically powers off PC to enforce healthy sleep. Cannot be disabled.${C_RESET}\n"
-    read -r -p "  Auto-shutdown time (HH:MM in 24h format, e.g. 23:00, 00:00) [00:00]: " ans_time
-    ans_time=${ans_time:-00:00}
-    read -r -p "  Curfew wake / end time (HH:MM in 24h format, e.g. 03:00, 06:00) [03:00]: " ans_end
-    ans_end=${ans_end:-03:00}
+    read -r -p "  Auto-shutdown time (HH:MM in 24h format, e.g. 23:00, 01:00) [01:00]: " ans_time
+    ans_time=${ans_time:-01:00}
+    read -r -p "  Curfew wake / end time (HH:MM in 24h format, e.g. 04:00, 06:00) [04:00]: " ans_end
+    ans_end=${ans_end:-04:00}
     INSTALL_ARGS+=(--curfew-start "$ans_time" --curfew-end "$ans_end")
   fi
   printf "\n"

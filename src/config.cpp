@@ -274,8 +274,8 @@ bool upgrade_config_text(std::string& text, bool popup, const std::string& popup
         text += "\n# Night curfew: automatically shuts down the PC at curfew_start and keeps it unusable until curfew_end.\n";
         text += "# Sends notifications at 30 min, 15 min, 5 min, and 1 min before shutdown.\n";
         text += "curfew = yes\n";
-        text += "curfew_start = 00:00\n";
-        text += "curfew_end = 03:00\n";
+        text += "curfew_start = 01:00\n";
+        text += "curfew_end = 04:00\n";
         text += "curfew_boot_grace_sec = 15\n";
         notes.push_back("added Night Curfew settings (auto-shutdown)");
         changed = true;
