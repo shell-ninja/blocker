@@ -437,14 +437,16 @@ static int cmd_install(const std::vector<std::string>& args) {
     if (!paths::dev()) {
         if (!copy_self_to(paths::bin())) return 1;
         for (const auto& u : {std::pair<const char*, const char*>{"blocker.service", embedded::SERVICE},
-                              {"blocker-guard.service", embedded::GUARD_SERVICE}, {"blocker-guard.timer", embedded::GUARD_TIMER}}) {
+                              {"blocker-guard.service", embedded::GUARD_SERVICE}, {"blocker-guard.timer", embedded::GUARD_TIMER},
+                              {"blocker-crxserve.service", embedded::CRXSERVE_SERVICE}}) {
             std::string p = paths::unit_dir() + "/" + u.first;
             if (path_exists(p)) protect::set_immutable(p, false);
             if (!write_file_atomic(p, u.second, 0644)) { std::fprintf(stderr, "blocker: cannot write %s\n", p.c_str()); return 1; }
         }
         unlink(paths::disabled_flag().c_str());
         if (run_cmd({"systemctl", "daemon-reload"}) != 0 || run_cmd({"systemctl", "enable", "--now", "blocker.service"}) != 0 ||
-            run_cmd({"systemctl", "enable", "--now", "blocker-guard.timer"}) != 0) {
+            run_cmd({"systemctl", "enable", "--now", "blocker-guard.timer"}) != 0 ||
+            run_cmd({"systemctl", "enable", "--now", "blocker-crxserve.service"}) != 0) {
             std::fprintf(stderr, "blocker: systemctl failed - is this a systemd system? Check 'journalctl -u blocker'.\n");
             return 1;
         }

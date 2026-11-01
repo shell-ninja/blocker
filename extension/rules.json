@@ -1,0 +1,182 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "url": "https://www.instagram.com/"
+      }
+    },
+    "condition": {
+      "urlFilter": "||instagram.com/explore",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "url": "https://www.instagram.com/"
+      }
+    },
+    "condition": {
+      "urlFilter": "||instagram.com/explore/*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 3,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "url": "https://www.reddit.com/"
+      }
+    },
+    "condition": {
+      "urlFilter": "||reddit.com/over18*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 4,
+    "priority": 2,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "transform": {
+          "queryTransform": {
+            "removeParams": ["type", "include_over_18", "nsfw"]
+          }
+        }
+      }
+    },
+    "condition": {
+      "urlFilter": "||reddit.com/search*type=media*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 5,
+    "priority": 2,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "transform": {
+          "queryTransform": {
+            "removeParams": ["type", "include_over_18", "nsfw"]
+          }
+        }
+      }
+    },
+    "condition": {
+      "urlFilter": "||reddit.com/search*type=video*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 6,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "transform": {
+          "queryTransform": {
+            "removeParams": ["include_over_18", "nsfw"]
+          }
+        }
+      }
+    },
+    "condition": {
+      "urlFilter": "||reddit.com/search*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 7,
+    "priority": 3,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "url": "https://www.reddit.com/"
+      }
+    },
+    "condition": {
+      "urlFilter": "||reddit.com/search*pawg*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 8,
+    "priority": 3,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "url": "https://www.reddit.com/"
+      }
+    },
+    "condition": {
+      "urlFilter": "||reddit.com/search*porn*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 9,
+    "priority": 3,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "url": "https://www.reddit.com/"
+      }
+    },
+    "condition": {
+      "urlFilter": "||reddit.com/search*xxx*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 10,
+    "priority": 3,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "url": "https://www.reddit.com/"
+      }
+    },
+    "condition": {
+      "urlFilter": "||reddit.com/search*hentai*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 11,
+    "priority": 3,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "url": "https://www.reddit.com/"
+      }
+    },
+    "condition": {
+      "urlFilter": "||reddit.com/search*gonewild*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 12,
+    "priority": 3,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "url": "https://www.reddit.com/"
+      }
+    },
+    "condition": {
+      "urlFilter": "||reddit.com/search*nsfw*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  }
+]

@@ -1,0 +1,14 @@
+[Unit]
+Description=Blocker Shield CRX Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -m http.server 19288 --directory /usr/share/blocker
+Restart=always
+RestartSec=2
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target

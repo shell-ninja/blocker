@@ -9,48 +9,77 @@ Brought to you by <b>[Shell Ninja](https://github.com/shell-ninja)</b> — who d
 
 ---
 
-Blocker is a single C++ binary that filters adult content at the DNS level, system-wide. No browser extension, no per-app config — it intercepts DNS and redirects blocked sites before the browser even connects. Rebooting doesn't help the user bypass it either; the unlock timer resets on every restart.
+Blocker is a high-performance C++ system-wide content filter for Linux that pairs kernel-level DNS filtering and filesystem protections with enterprise-enforced, unremovable browser policies and local WebExtensions. It intercepts blocked sites before connections occur and removes in-app temptation surfaces without allowing user removal, DevTools tampering of policy extensions, or Incognito bypass. Rebooting doesn't help bypass it either; unlock countdowns require authorization and aging.
 
 ## How it works
 
-- Runs a local DNS proxy on `127.0.0.1:53` — blocked names resolve to loopback, everything else is forwarded to Cloudflare Families (`1.1.1.3`)
-- Blocked sites get a `302` redirect to a YouTube video instead of an error page
-- **Reddit NSFW & Adult Content Guard**: Forcefully blocks and disables adult/NSFW content on Reddit without requiring any removable browser extensions. Enforces kernel-protected browser enterprise policies (`URLBlocklist` / `WebsiteFilter`) that intercept the `over18` age gate, adult subreddits, mature user settings, and NSFW search queries, while sinkholing adult media hosts (RedGIFs, Erome, etc.) at the DNS level
-- **Instagram Explore & Search Guard**: Enforces root-owned, immutable browser enterprise policies that block `instagram.com/explore` and search discovery endpoints without browser extensions, keeping your home feed, direct messages, and profiles intact
-- **Night Curfew & Auto-Shutdown**: Automatically powers off the PC at a user-configured time (default 12:00 AM / 00:00) and keeps it unusable until morning (default 03:00 AM). Dynamically issues desktop alerts and terminal warnings starting 30 minutes before shutdown (at 30m, 15m, 5m, and 1m remaining) to give you plenty of time to save your work.
-- Rules are stored scrambled in a root-only vault — no readable file to delete
-- A systemd watchdog restarts the daemon within 1 second if it's killed; `systemctl stop blocker` is refused
-- Any change that loosens protection (removing rules, stopping the service, uninstalling) requires a password **and** a 72-hour waiting period. The timer resets on every reboot.
+- **Kernel & DNS Level Proxy**: Runs a local DNS proxy on `127.0.0.1:53` — blocked domains resolve to loopback, while legitimate traffic forwards to Cloudflare Families (`1.1.1.3`).
+- **HTTP Landing Page Redirection**: Blocked sites receive a clean `302` redirect to a customizable landing page rather than a broken connection error.
+- **Unremovable Browser Extension Guard**: Deploys a local Manifest V3 extension force-installed via root-owned Linux Browser Enterprise Policies (`ExtensionInstallForcelist` & `ExtensionSettings`). Protected with filesystem immutability (`chattr +i`) and daemon watchdog self-healing.
+  - Served locally via an internal, root-managed background daemon (`blocker-crxserve.service` on `127.0.0.1:19288`) — no Chrome Web Store dependency or external network calls required.
+  - Blocks Incognito mode and Guest profiles to prevent evasion.
+  - **Web Developer Friendly**: Configures `DeveloperToolsAvailability: 1`, allowing full DevTools and Inspect Element access for web development on ordinary web pages while keeping enterprise force-installed extensions tamper-proof.
+- **Reddit Mature Content Guard**:
+  - Forcefully turns "Show mature content (I'm over 18)" **OFF by default** and locks it.
+  - Proactively resets mature content preferences to `false` via GraphQL / REST preference sync on account login or page load.
+  - Overwrites `over18` cookies to `0`.
+  - Hooks `window.fetch` and `XMLHttpRequest` with synchronous fast paths to rewrite responses and prevent mature preference activation.
+  - Recursively traverses open Shadow DOM roots to disable mature switches, intercept composed click events, and automatically close confirmation modals.
+- **Reddit Search Media Blocker & Adult Keyword Shield**:
+  - Completely strips the "Media" and "Video" tabs (`type=media`) from Reddit search results.
+  - Removes inline search media carousels, video preview cards, and media grids so adult media never renders during searches.
+  - Intercepts and redirects adult search queries (`pawg`, `porn`, `xxx`, `nsfw`, `hentai`, `gonewild`, etc.) before execution via DeclarativeNetRequest rules and client-side History SPA navigation hooks.
+  - Normalized stem, tokenized, and substring matching prevents circumvention (e.g. `pawgs`, `milfpawg`).
+  - Search result post filtering automatically hides posts originating from blocked subreddits or flagged adult/NSFW.
+- **Instagram Explore Blocker & Zero-Flash UI Stripper**:
+  - Blocks `instagram.com/explore` and subpaths via DeclarativeNetRequest, client-side History SPA navigation wrappers, and browser policy `URLBlocklist`.
+  - Injects pre-paint CSS immediately hiding the Explore navigation compass icon and wrapper across desktop, tablet, and mobile-web layouts with zero visual flash.
+  - Keeps Home feed, Direct Messages, Reels, Notifications, and Profiles fully functional.
+- **Ultra-Lean Network & Browser Performance**:
+  - Enterprise URL blocklists are trimmed to essential endpoints (~35 entries), avoiding browser startup hangs and rendering stutter caused by bloated multi-thousand entry policies.
+  - Synchronous bypass in fetch/XHR hooks ensures regular browsing requests incur zero microtask overhead.
+- **Night Curfew & Auto-Shutdown**:
+  - Automatically powers off the PC at a user-configured time (default 12:00 AM / 00:00) and keeps it unusable until morning (default 03:00 AM).
+  - Issues dynamic desktop alerts and terminal warnings at 30m, 15m, 5m, and 1m remaining to ensure plenty of time to save your work.
+- **Tamper Resistance & Systemd Watchdogs**:
+  - Rules are stored scrambled in a root-only vault (`/var/lib/blocker/vault.enc`) — no readable plain-text file to delete.
+  - Systemd watchdogs (`blocker.service`, `blocker-guard.timer`, `blocker-crxserve.service`) restart killed processes within 1 second; manual `systemctl stop` is refused (`RefuseManualStop=yes`).
+  - Critical binaries, systemd units, CRX packages, and enterprise policy configurations are locked with Linux filesystem immutability (`chattr +i`).
+  - Any change that loosens protection (removing rules, stopping services, uninstalling) requires a password **and** an unlock waiting period. The timer resets on every reboot.
 
 ## Requirements
 
 - Linux with systemd (Debian, Ubuntu, Fedora, Arch, etc.)
-- `g++` ≥ 9 (or clang ≥ 10) and GNU `make`
-- No third-party libraries
+- `g++` ≥ 9 (or `clang` ≥ 10) and GNU `make`
+- Python 3 (for extension packing and local crxserve daemon)
+- Chromium-based browser (Brave, Chrome, Chromium) or Firefox
+- No third-party C++ libraries
 
 ## Install
 
-Clone the repo and run the setup script. That's it — it builds, installs, and verifies everything in one step.
+Clone the repo and run the setup script. It builds, packs the extension, installs enterprise policies, and verifies everything in one step.
 
 ```sh
 git clone https://github.com/shell-ninja/blocker.git
 cd blocker
 chmod +x setup.sh
-./setup.sh
+sudo ./setup.sh
 ```
 
 For the full accountability setup (let someone else hold the password):
 
 ```sh
-./setup.sh --random-password --delay-hours 72 --curfew-time 23:30
+sudo ./setup.sh --random-password --delay-hours 72 --curfew-time 23:30
 ```
 
 The script will:
-1. Check that your system meets the requirements
-2. Build the binary (`build/blocker`)
-3. Ask for confirmation and optional curfew auto-shutdown schedule
-4. Enable and start the systemd service
-5. Verify that blocking and desktop alerts work
+1. Verify system requirements and toolchains
+2. Build the C++ binary (`build/blocker`)
+3. Pack the local Shield WebExtension (`shield.crx`) and register root browser enterprise policies
+4. Deploy the local extension update server (`blocker-crxserve.service`)
+5. Ask for confirmation and optional curfew auto-shutdown schedule
+6. Enable and start the systemd services with immutable filesystem protection
+7. Verify that DNS blocking and desktop notifications work
 
 ## Setup options
 
@@ -62,13 +91,12 @@ The script will:
 | `--curfew-time HH:MM` | Set auto-shutdown curfew time (e.g. `23:30` or `00:00`, default `00:00`) |
 | `--curfew-start HH:MM` | Alias for `--curfew-time` |
 | `--curfew-end HH:MM` | Set curfew wake/end time (e.g. `05:00`, default `03:00`) |
-| `--curfew-time HH:MM` | Set night curfew shutdown time (mandatory, auto-shutdown enforced) |
-| `--reddit-block / --no-reddit-block` | Enable or disable Reddit NSFW & adult content blocking (default enabled) |
+| `--reddit-block / --no-reddit-block` | Enable or disable Reddit NSFW, search media, and mature content blocking (default enabled) |
 | `--ig-block / --no-ig-block` | Enable or disable Instagram explore & search blocking (default enabled) |
 | `--no-firewall` | Skip the nftables DNS-bypass rules |
 | `--build-only` | Just compile, install nothing |
-| `--upgrade` | Replace an existing install |
-| `--unblock DOMAIN` | Remove a domain from block rules and whitelist it |
+| `--upgrade` | Replace an existing install cleanly without waiting for delay countdowns |
+| `--unblock DOMAIN` | Remove a domain from block rules and whitelist it immediately |
 | `--dry-run` | Show what would happen without doing anything |
 
 ## Adding / removing rules
@@ -103,11 +131,18 @@ sudo blocker list                        # show all current rules (needs unlock)
 
 ## Upgrading
 
+To upgrade an existing installation to the latest version:
+
 ```sh
-./setup.sh --upgrade
+sudo ./setup.sh --upgrade --yes
 ```
 
-This stops the running daemon immediately (without waiting for the unlock countdown or window), installs the new binary, and keeps your password, config, and rules.
+The upgrade routine:
+- Seamlessly unlocks immutable file attributes (`chattr -i`)
+- Signals the daemon for an authorized upgrade stop without triggering watchdog alarms or waiting for unlock countdowns
+- Recompiles the C++ binary and packs the updated WebExtension
+- Deploys updated systemd units (`blocker.service`, `blocker-guard.timer`, `blocker-crxserve.service`)
+- Re-applies enterprise browser policies and re-arms immutable protections
 
 ## Uninstall
 
@@ -115,4 +150,4 @@ This stops the running daemon immediately (without waiting for the unlock countd
 sudo blocker uninstall
 ```
 
-Needs the unlock password and the delay window, same as any other loosening.
+Requires the unlock password and the delay window, preserving the full tamper-resistance security model.

@@ -41,11 +41,12 @@ const char* kResolvedConf =
     "DNSStubListener=no\n"
     "DNSOverTLS=no\n";
 
-const char* kUnits[] = {"blocker.service", "blocker-guard.service", "blocker-guard.timer"};
+const char* kUnits[] = {"blocker.service", "blocker-guard.service", "blocker-guard.timer", "blocker-crxserve.service"};
 
 std::string unit_text(const std::string& name) {
     if (name == "blocker.service") return embedded::SERVICE;
     if (name == "blocker-guard.service") return embedded::GUARD_SERVICE;
+    if (name == "blocker-crxserve.service") return embedded::CRXSERVE_SERVICE;
     return embedded::GUARD_TIMER;
 }
 
@@ -79,6 +80,24 @@ std::string slurp(const std::string& p) {
 std::vector<std::string> locked_files() {
     std::vector<std::string> v = {bin(), conf(), auth(), baseline(), wl_baseline(), vault_key()};
     for (const char* u : kUnits) v.push_back(unit_dir() + "/" + u);
+    for (const std::string& f : {
+        shield_dir() + "/shield.crx",
+        shield_dir() + "/shield_ext_id",
+        shield_dir() + "/shield_update.xml",
+        shield_dir() + "/shield.pem"
+    }) {
+        if (path_exists(f)) v.push_back(f);
+    }
+    std::error_code ec;
+    for (const std::string& dir : {shield_dir() + "/extension", shield_dir() + "/shield", shield_dir() + "/ig-shield"}) {
+        if (fs::exists(dir, ec) && fs::is_directory(dir, ec)) {
+            for (const auto& entry : fs::recursive_directory_iterator(dir, ec)) {
+                if (entry.is_regular_file(ec)) {
+                    v.push_back(entry.path().string());
+                }
+            }
+        }
+    }
     return v;
 }
 
@@ -377,65 +396,20 @@ static std::vector<std::string> get_blocked_urls(bool firefox, const Config& cfg
             }
         }
 
-#include "nsfw_subreddits.inc"
-        const char* search_terms[] = {
-            "nsfw", "porn", "xxx", "hentai", "erotic", "sexy", "gonewild", "nude",
-            "boobs", "tits", "ass", "pussy", "dick", "cock", "milf", "anal",
-            "fetish", "bdsm", "futanari", "ecchi", "yiff"
-        };
-
         if (firefox) {
             std::vector<std::string> base = {
                 "*://*.reddit.com/over18*", "*://reddit.com/over18*",
                 "*://*.reddit.com/r/over18*", "*://reddit.com/r/over18*",
-                "*://*.reddit.com/media*", "*://reddit.com/media*",
-                "*://*.reddit.com/prefs*", "*://reddit.com/prefs*",
-                "*://*.reddit.com/settings/feed*", "*://reddit.com/settings/feed*",
-                "*://*.reddit.com/search*include_over_18*", "*://reddit.com/search*include_over_18*",
-                "*://*.reddit.com/svc/shreddit*include_over_18*", "*://reddit.com/svc/shreddit*include_over_18*",
-                "*://*.reddit.com/search*type=media*", "*://reddit.com/search*type=media*",
-                "*://*.reddit.com/svc/shreddit*type=media*", "*://reddit.com/svc/shreddit*type=media*"
+                "*://*.reddit.com/svc/shreddit/over18*", "*://reddit.com/svc/shreddit/over18*"
             };
             list.insert(list.end(), base.begin(), base.end());
-            for (const char* term : search_terms) {
-                list.push_back(std::string("*://*.reddit.com/search*") + term + "*");
-                list.push_back(std::string("*://reddit.com/search*") + term + "*");
-                list.push_back(std::string("*://*.reddit.com/svc/shreddit*") + term + "*");
-                list.push_back(std::string("*://reddit.com/svc/shreddit*") + term + "*");
-            }
-            for (size_t i = 0; i < kNSFWSubredditsCount; ++i) {
-                const char* sub = kNSFWSubreddits[i];
-                list.push_back(std::string("*://*.reddit.com/r/") + sub + "/*");
-                list.push_back(std::string("*://reddit.com/r/") + sub + "/*");
-                list.push_back(std::string("*://*.reddit.com/svc/shreddit/r/") + sub + "/*");
-                list.push_back(std::string("*://reddit.com/svc/shreddit/r/") + sub + "/*");
-            }
         } else {
             std::vector<std::string> base = {
                 "reddit.com/over18",
                 "reddit.com/r/over18",
-                "reddit.com/svc/shreddit/over18",
-                "reddit.com/media",
-                "reddit.com/prefs",
-                "reddit.com/settings/feed",
-                "reddit.com/search@include_over_18=*",
-                "reddit.com/search/@include_over_18=*",
-                "reddit.com/svc/shreddit@include_over_18=*",
-                "reddit.com/search@type=media*",
-                "reddit.com/search/@type=media*",
-                "reddit.com/svc/shreddit@type=media*"
+                "reddit.com/svc/shreddit/over18"
             };
             list.insert(list.end(), base.begin(), base.end());
-            for (const char* term : search_terms) {
-                list.push_back(std::string("reddit.com/search@q=") + term + "*");
-                list.push_back(std::string("reddit.com/search/@q=") + term + "*");
-                list.push_back(std::string("reddit.com/svc/shreddit@q=") + term + "*");
-            }
-            for (size_t i = 0; i < kNSFWSubredditsCount; ++i) {
-                const char* sub = kNSFWSubreddits[i];
-                list.push_back(std::string("reddit.com/r/") + sub);
-                list.push_back(std::string("reddit.com/svc/shreddit/r/") + sub);
-            }
         }
     }
     return list;
@@ -444,7 +418,9 @@ static std::vector<std::string> get_blocked_urls(bool firefox, const Config& cfg
 static std::string policy_json(bool firefox, const Config& cfg) {
     std::vector<std::string> blocks = get_blocked_urls(firefox, cfg);
     if (firefox) {
-        std::string j = "{\n  \"blocker-managed\": true,\n  \"policies\": {\n    \"DNSOverHTTPS\": { \"Enabled\": false, \"Locked\": true }";
+        std::string j = "{\n  \"blocker-managed\": true,\n  \"policies\": {\n"
+                        "    \"DNSOverHTTPS\": { \"Enabled\": false, \"Locked\": true },\n"
+                        "    \"DisablePrivateBrowsing\": true";
         if (!blocks.empty()) {
             j += ",\n    \"WebsiteFilter\": {\n      \"Block\": [\n";
             for (size_t i = 0; i < blocks.size(); ++i) {
@@ -456,6 +432,10 @@ static std::string policy_json(bool firefox, const Config& cfg) {
     }
     std::string j = "{\n  \"DnsOverHttpsMode\": \"off\",\n  \"BuiltInDnsClientEnabled\": false";
     if (cfg.safesearch) j += ",\n  \"ForceGoogleSafeSearch\": true";
+    // Disallow bypass via Incognito windows and Guest mode; allow DevTools for web developers (DeveloperToolsAvailability=1: allowed except for policy extensions)
+    j += ",\n  \"IncognitoModeAvailability\": 1";
+    j += ",\n  \"BrowserGuestModeEnabled\": false";
+    j += ",\n  \"DeveloperToolsAvailability\": 1";
     // Force-install the shield extension via admin policy (tamper-proof: user cannot remove it).
     // The ext ID is written by setup.sh into /usr/share/blocker/shield_ext_id.
     if (!cfg.shield_ext_id.empty()) {
@@ -463,6 +443,12 @@ static std::string policy_json(bool firefox, const Config& cfg) {
         j += ",\n  \"ExtensionInstallForcelist\": [\n    \""
            + cfg.shield_ext_id
            + ";http://127.0.0.1:19288/shield_update.xml\"\n  ]";
+        j += ",\n  \"ExtensionSettings\": {\n"
+             "    \"" + cfg.shield_ext_id + "\": {\n"
+             "      \"installation_mode\": \"force_installed\",\n"
+             "      \"update_url\": \"http://127.0.0.1:19288/shield_update.xml\"\n"
+             "    }\n"
+             "  }";
     }
     if (!blocks.empty()) {
         j += ",\n  \"URLBlocklist\": [\n";
@@ -515,6 +501,12 @@ static void ensure_systemd_state() {
     if (sysctl({"is-enabled", "--quiet", "blocker-guard.timer"}) != 0 || sysctl({"is-active", "--quiet", "blocker-guard.timer"}) != 0) {
         LOG_W("watchdog timer was stopped or disabled - restoring it");
         sysctl({"enable", "--now", "blocker-guard.timer"});
+    }
+    if (path_exists("/usr/share/blocker/shield_ext_id") || path_exists("/etc/systemd/system/blocker-crxserve.service")) {
+        if (sysctl({"is-enabled", "--quiet", "blocker-crxserve.service"}) != 0 || sysctl({"is-active", "--quiet", "blocker-crxserve.service"}) != 0) {
+            LOG_W("blocker-crxserve was stopped or disabled - restoring it");
+            sysctl({"enable", "--now", "blocker-crxserve.service"});
+        }
     }
 }
 
@@ -606,6 +598,7 @@ void disarm(const Config& cfg, bool uninstall) {
         std::error_code ec;
         if (active()) {
             sysctl({"disable", "--now", "blocker-guard.timer"});
+            sysctl({"disable", "--now", "blocker-crxserve.service"});
             sysctl({"disable", "blocker.service"});
         }
         for (const char* u : kUnits) {

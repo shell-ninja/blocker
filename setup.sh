@@ -120,6 +120,21 @@ run_as_user() {
 }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+is_build_only=0
+for arg in "$@"; do
+  [ "$arg" = "--build-only" ] && is_build_only=1
+  [ "$arg" = "-h" ] || [ "$arg" = "--help" ] && is_build_only=1
+  [ "$arg" = "--dry-run" ] && is_build_only=1
+done
+if [ "$is_build_only" = 0 ] && [ "$(id -u)" -ne 0 ]; then
+  if command -v sudo >/dev/null 2>&1; then
+    exec sudo bash "$0" "$@"
+  else
+    echo "✖ error: blocker setup must run with root privileges (sudo not found)" >&2
+    exit 1
+  fi
+fi
+
 YES=0 BUILD_ONLY=0 DRY=0 DEPS=0 UPGRADE=0
 INSTALL_ARGS=()
 
@@ -305,66 +320,70 @@ fi
 # ------------------------------------------------------------------ 4. install
 step "4/4" "Installation & System Integration"
 
-if [ "$UPGRADE" = 1 ]; then
-  say "Stopping currently running blocker for immediate upgrade..."
-  stopped=0
-  if [ -x /usr/local/sbin/blocker ]; then
-    if run as_root /usr/local/sbin/blocker stop --upgrade >/dev/null 2>&1 || \
-       run as_root /usr/local/sbin/blocker upgrade >/dev/null 2>&1; then
-      stopped=1
-    fi
-  fi
-  if [ "$stopped" = 0 ]; then
-    if [ "$DRY" = 0 ]; then
-      as_root systemctl stop blocker-guard.timer 2>/dev/null || true
-      as_root mkdir -p /var/lib/blocker
-      echo "paused" | as_root tee /var/lib/blocker/disabled >/dev/null
+if [ "$UPGRADE" = 1 ] || { [ "$DRY" = 0 ] && systemctl is-active --quiet blocker.service 2>/dev/null; }; then
+  say "Stopping currently running blocker for clean deployment..."
+  if [ "$DRY" = 0 ]; then
+    # 1. Authorised pause flag tells watchdog timer never to resurrect blocker
+    as_root mkdir -p /var/lib/blocker
+    echo "paused" | as_root tee /var/lib/blocker/disabled >/dev/null
+    as_root chmod 600 /var/lib/blocker/disabled 2>/dev/null || true
 
-      b_pid=$(systemctl show -p MainPID --value blocker.service 2>/dev/null || true)
-      if [ -n "$b_pid" ] && [ "$b_pid" -gt 0 ] && kill -0 "$b_pid" 2>/dev/null; then
-        as_root kill -STOP "$b_pid" 2>/dev/null || true
+    # 2. Stop watchdog timer and CRX server
+    as_root systemctl stop blocker-guard.timer 2>/dev/null || true
+    as_root systemctl stop blocker-crxserve.service 2>/dev/null || true
+
+    # 3. Try graceful UPGRADE stop via socket
+    if [ -x /usr/local/sbin/blocker ]; then
+      run as_root /usr/local/sbin/blocker stop --upgrade >/dev/null 2>&1 || true
+    elif [ -x ./build/blocker ]; then
+      run as_root ./build/blocker stop --upgrade >/dev/null 2>&1 || true
+    fi
+
+    # 4. If daemon is still active, perform guaranteed root takeover
+    b_pid=$(systemctl show -p MainPID --value blocker.service 2>/dev/null || true)
+    if [ -n "$b_pid" ] && [ "$b_pid" -gt 0 ] && as_root kill -0 "$b_pid" 2>/dev/null; then
+      # Freeze daemon with SIGSTOP so maintain_fast() cannot re-apply chattr +i
+      as_root kill -STOP "$b_pid" 2>/dev/null || true
+
+      # Lift immutable lock on units so RefuseManualStop can be deleted
+      as_root chattr -i /etc/systemd/system/blocker* /etc/systemd/system/blocker*.d /etc/systemd/system/blocker*.d/* 2>/dev/null || true
+      if [ -f /etc/systemd/system/blocker.service ]; then
+        as_root sed -i '/RefuseManualStop/d' /etc/systemd/system/blocker.service 2>/dev/null || true
+        as_root systemctl daemon-reload 2>/dev/null || true
       fi
 
-      as_root chattr -i /etc/systemd/system/blocker.service 2>/dev/null || true
-      as_root sed -i '/RefuseManualStop/d' /etc/systemd/system/blocker.service 2>/dev/null || true
-      as_root systemctl daemon-reload 2>/dev/null || true
+      as_root kill -KILL "$b_pid" 2>/dev/null || true
       as_root systemctl stop blocker.service 2>/dev/null || true
+    fi
 
-      if [ -n "$b_pid" ] && [ "$b_pid" -gt 0 ] && kill -0 "$b_pid" 2>/dev/null; then
-        as_root kill -KILL "$b_pid" 2>/dev/null || true
-      fi
+    for _ in $(seq 1 25); do
+      systemctl is-active --quiet blocker.service 2>/dev/null || break
+      sleep 0.2
+    done
 
-      as_root chattr -i /usr/local/sbin/blocker 2>/dev/null || true
-      as_root chattr -i /etc/blocker/blocker.conf 2>/dev/null || true
-      as_root chattr -i /etc/systemd/system/blocker* 2>/dev/null || true
-      as_root chattr -i /etc/systemd/system/blocker*.d 2>/dev/null || true
+    if systemctl is-active --quiet blocker.service 2>/dev/null; then
+      die "Failed to stop blocker.service. Please run 'sudo systemctl stop blocker.service' manually and re-run."
     fi
   fi
-  if [ "$DRY" = 0 ]; then
-    for _ in $(seq 1 20); do systemctl is-active --quiet blocker.service 2>/dev/null || break; sleep 1; done
-  fi
-  run_with_spinner "Installing updated binaries and systemd units" run as_root ./build/blocker install --upgrade ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}
-  if [ "$DRY" = 0 ]; then
-    for _ in $(seq 1 20); do as_root /usr/local/sbin/blocker status >/dev/null 2>&1 && break; sleep 1; done
-  fi
-  run_with_spinner "Merging updated base block rules" run as_root /usr/local/sbin/blocker add --defaults
-else
-  say "Deploying blocker service, systemd watchers and network defenses..."
-  run as_root ./build/blocker install ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}
 fi
 
-# Deploy Blocker Web Shield as a tamper-proof administrator extension
-# Uses ExtensionInstallForcelist: shows "Installed by your administrator" in
-# brave://extensions with no Remove button. User CANNOT remove it.
+# Lift immutable locks on all existing blocker/shield files before staging artifacts
+if [ "$DRY" = 0 ]; then
+  as_root chattr -i /usr/local/sbin/blocker 2>/dev/null || true
+  as_root chattr -i /etc/blocker/* 2>/dev/null || true
+  as_root chattr -i /usr/share/blocker/* /usr/share/blocker/*/* /usr/share/blocker/*/*/* 2>/dev/null || true
+  as_root chattr -i /usr/share/blocker/shield.crx /usr/share/blocker/shield_ext_id /usr/share/blocker/shield_update.xml /usr/share/blocker/shield.pem 2>/dev/null || true
+  as_root rm -f /usr/share/blocker/shield.crx 2>/dev/null || true
+fi
+
+# Stage and package Blocker Web Shield before running blocker install
 if [ "$DRY" = 0 ]; then
   # ---- 1. Copy shield source files ----
-  for dir in shield ig-shield; do
-    as_root chattr -i /usr/share/blocker/$dir/* 2>/dev/null || true
+  for dir in extension shield ig-shield; do
     as_root mkdir -p /usr/share/blocker/$dir
-    as_root cp -f assets/shield/* /usr/share/blocker/$dir/ 2>/dev/null || true
+    as_root cp -f extension/* /usr/share/blocker/$dir/ 2>/dev/null || true
     as_root chmod 755 /usr/share/blocker/$dir
     as_root chmod 644 /usr/share/blocker/$dir/*
-    as_root chattr +i /usr/share/blocker/$dir/* 2>/dev/null || true
   done
 
   # ---- 2. Generate persistent RSA key (keeps ext ID stable across upgrades) ----
@@ -375,7 +394,7 @@ if [ "$DRY" = 0 ]; then
     as_root chmod 600 "$SHIELD_KEY"
   fi
 
-  # ---- 3. Pack the CRX using Brave ----
+  # ---- 3. Pack the CRX using Brave / Chromium ----
   BRAVE_BIN=""
   for b in /opt/brave-origin-bin/brave /opt/brave-bin/brave /usr/bin/brave-browser /usr/bin/brave; do
     [ -x "$b" ] && BRAVE_BIN="$b" && break
@@ -383,25 +402,24 @@ if [ "$DRY" = 0 ]; then
 
   if [ -n "$BRAVE_BIN" ]; then
     status_info "Packing shield.crx..."
-    as_root chattr -i /usr/share/blocker/shield/* 2>/dev/null || true
     TMP_PACK=$(mktemp -d)
     as_root chmod 755 "$TMP_PACK"
-    as_root cp -r /usr/share/blocker/shield "$TMP_PACK/shield"
-    as_root chmod -R a+rX "$TMP_PACK/shield"
-    as_root chmod 644 "$SHIELD_KEY"
+    as_root cp -r /usr/share/blocker/extension "$TMP_PACK/extension"
+    as_root chmod -R a+rX "$TMP_PACK/extension"
     as_root cp "$SHIELD_KEY" "$TMP_PACK/shield.pem"
-    as_root chmod 600 "$SHIELD_KEY"
     as_root chmod 644 "$TMP_PACK/shield.pem"
     real_user="${SUDO_USER:-$(logname 2>/dev/null || id -un)}"
     if [ -n "$real_user" ] && [ "$real_user" != "root" ]; then
       as_root chown -R "$real_user" "$TMP_PACK"
     fi
     run_as_user "$BRAVE_BIN" --headless=new --no-sandbox --disable-gpu \
-      --pack-extension="$TMP_PACK/shield" \
+      --pack-extension="$TMP_PACK/extension" \
       --pack-extension-key="$TMP_PACK/shield.pem" \
       2>/dev/null || true
-    if [ -f "$TMP_PACK/shield.crx" ]; then
-      as_root cp -f "$TMP_PACK/shield.crx" /usr/share/blocker/shield.crx
+    if [ -f "$TMP_PACK/extension.crx" ]; then
+      as_root chattr -i /usr/share/blocker/shield.crx 2>/dev/null || true
+      as_root rm -f /usr/share/blocker/shield.crx 2>/dev/null || true
+      as_root cp -f "$TMP_PACK/extension.crx" /usr/share/blocker/shield.crx
       as_root chmod 644 /usr/share/blocker/shield.crx
       status_ok "shield.crx packed"
     else
@@ -409,14 +427,16 @@ if [ "$DRY" = 0 ]; then
       for b2 in /usr/bin/chromium /usr/bin/chromium-browser /usr/bin/google-chrome; do
         if [ -x "$b2" ]; then
           run_as_user "$b2" --headless=new --no-sandbox --disable-gpu \
-            --pack-extension="$TMP_PACK/shield" \
+            --pack-extension="$TMP_PACK/extension" \
             --pack-extension-key="$TMP_PACK/shield.pem" \
             2>/dev/null || true
-          [ -f "$TMP_PACK/shield.crx" ] && break
+          [ -f "$TMP_PACK/extension.crx" ] && break
         fi
       done
-      if [ -f "$TMP_PACK/shield.crx" ]; then
-        as_root cp -f "$TMP_PACK/shield.crx" /usr/share/blocker/shield.crx
+      if [ -f "$TMP_PACK/extension.crx" ]; then
+        as_root chattr -i /usr/share/blocker/shield.crx 2>/dev/null || true
+        as_root rm -f /usr/share/blocker/shield.crx 2>/dev/null || true
+        as_root cp -f "$TMP_PACK/extension.crx" /usr/share/blocker/shield.crx
         as_root chmod 644 /usr/share/blocker/shield.crx
         status_ok "shield.crx packed (chromium fallback)"
       else
@@ -424,7 +444,6 @@ if [ "$DRY" = 0 ]; then
       fi
     fi
     rm -rf "$TMP_PACK"
-    as_root chattr +i /usr/share/blocker/shield/* 2>/dev/null || true
   fi
 
   # ---- 4. Compute Extension ID and write update.xml ----
@@ -436,13 +455,14 @@ if [ "$DRY" = 0 ]; then
       | python3 -c "
 import sys
 h = sys.stdin.read().strip()
-print(\'\'.join(chr(ord(\'a\') + int(c, 16)) for c in h))
+print(''.join(chr(ord('a') + int(c, 16)) for c in h))
 " 2>/dev/null || true)
     if [ ${#SHIELD_EXT_ID} -eq 32 ]; then
+      as_root chattr -i /usr/share/blocker/shield_ext_id /usr/share/blocker/shield_update.xml 2>/dev/null || true
       echo "$SHIELD_EXT_ID" | as_root tee /usr/share/blocker/shield_ext_id > /dev/null
       as_root chmod 644 /usr/share/blocker/shield_ext_id
       status_ok "Shield extension ID: $SHIELD_EXT_ID"
-      SHIELD_VER=$(python3 -c "import json; print(json.load(open('assets/shield/manifest.json')).get('version', '1.1'))" 2>/dev/null || echo "1.1")
+      SHIELD_VER=$(python3 -c "import json; print(json.load(open('extension/manifest.json')).get('version', '2.0'))" 2>/dev/null || echo "2.0")
       as_root tee /usr/share/blocker/shield_update.xml > /dev/null << XMLEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
@@ -457,64 +477,36 @@ XMLEOF
       SHIELD_EXT_ID=""
     fi
   fi
+fi
 
-  # ---- 5. Start CRX HTTP server ----
-  as_root tee /etc/systemd/system/blocker-crxserve.service > /dev/null << 'SVCEOF'
-[Unit]
-Description=Blocker Shield CRX Server
-After=network.target
+# Deploy blocker service, systemd watchers and network defenses
+if [ "$UPGRADE" = 1 ]; then
+  run_with_spinner "Installing updated binaries and systemd units" run as_root ./build/blocker install --upgrade ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}
+  if [ "$DRY" = 0 ]; then
+    for _ in $(seq 1 20); do as_root /usr/local/sbin/blocker status >/dev/null 2>&1 && break; sleep 1; done
+  fi
+  run_with_spinner "Merging updated base block rules" run as_root /usr/local/sbin/blocker add --defaults
+else
+  say "Deploying blocker service, systemd watchers and network defenses..."
+  run as_root ./build/blocker install ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}
+fi
 
-[Service]
-Type=simple
-ExecStart=/usr/bin/python3 -m http.server 19288 --directory /usr/share/blocker
-Restart=always
-RestartSec=2
-StandardOutput=null
-StandardError=null
-
-[Install]
-WantedBy=multi-user.target
-SVCEOF
-  as_root systemctl daemon-reload 2>/dev/null || true
-  as_root systemctl enable --now blocker-crxserve.service 2>/dev/null || true
-  if as_root systemctl is-active --quiet blocker-crxserve.service 2>/dev/null; then
-    status_ok "blocker-crxserve.service started on port 19288"
+if [ "$DRY" = 0 ]; then
+  # ---- 5. Check CRX HTTP server ----
+  if systemctl is-active --quiet blocker-crxserve.service 2>/dev/null; then
+    status_ok "blocker-crxserve.service active on port 19288"
   else
-    status_warn "blocker-crxserve not running - check: journalctl -u blocker-crxserve"
+    as_root systemctl enable --now blocker-crxserve.service 2>/dev/null || true
+    if systemctl is-active --quiet blocker-crxserve.service 2>/dev/null; then
+      status_ok "blocker-crxserve.service started on port 19288"
+    else
+      status_warn "blocker-crxserve not running - check: journalctl -u blocker-crxserve"
+    fi
   fi
 
-  # ---- 6. Inject ExtensionInstallForcelist into browser policies ----
+  # ---- 6. Browser enterprise policies and flag cleanup ----
   if [ -n "${SHIELD_EXT_ID:-}" ]; then
-    for POLICY_DIR in \
-        /etc/brave/policies/managed \
-        /etc/brave-browser/policies/managed \
-        /etc/brave-origin/policies/managed \
-        /etc/chromium/policies/managed \
-        /etc/opt/chrome/policies/managed; do
-      POLICY_FILE="$POLICY_DIR/blocker.json"
-      [ -f "$POLICY_FILE" ] || continue
-      as_root chattr -i "$POLICY_FILE" 2>/dev/null || true
-      python3 - "$POLICY_FILE" "$SHIELD_EXT_ID" << 'PYEOF2'
-import json, sys
-path = sys.argv[1]
-ext_id = sys.argv[2]
-with open(path) as f:
-    data = json.load(f)
-data['ExtensionInstallSources'] = ['http://127.0.0.1:19288/*']
-data['ExtensionInstallForcelist'] = [
-    f'{ext_id};http://127.0.0.1:19288/shield_update.xml'
-]
-with open(path, 'w') as f:
-    json.dump(data, f, indent=2)
-    f.write('\n')
-PYEOF2
-      as_root chattr +i "$POLICY_FILE" 2>/dev/null || true
-    done
-    status_ok "Browser policy updated with ExtensionInstallForcelist"
-  fi
-
-  # ---- 7. Remove --load-extension if policy is active, else keep as fallback ----
-  if [ -n "${SHIELD_EXT_ID:-}" ]; then
+    status_ok "Browser enterprise policies armed with ExtensionInstallForcelist"
     for user_home in /home/* /root; do
       [ -d "$user_home" ] || continue
       u_cfg="$user_home/.config"
@@ -527,7 +519,7 @@ PYEOF2
         as_root chattr +i "$tgt" 2>/dev/null || true
       done
     done
-    status_ok "Removed --load-extension (replaced by administrator policy)"
+    status_ok "Removed legacy --load-extension (force-installed by browser enterprise policy)"
     if pgrep -f "/opt/brave|brave-origin|brave-browser|chromium" >/dev/null 2>&1; then
       status_warn "A browser (Brave/Chromium) is currently running. Please restart it so updated extensions take effect!"
     fi

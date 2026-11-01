@@ -1,17 +1,46 @@
 {
   "name": "Blocker Web Shield",
-  "version": "1.4",
+  "version": "2.0",
   "manifest_version": 3,
-  "description": "Blocker In-Page UI and Keyword Shield for Instagram and Reddit",
+  "description": "Blocker In-Page UI and Security Shield for Instagram and Reddit",
+  "permissions": [
+    "cookies",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "*://*.instagram.com/*",
+    "*://instagram.com/*",
+    "*://*.reddit.com/*",
+    "*://reddit.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "blocker_rules",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
   "content_scripts": [
     {
       "matches": [
         "*://*.instagram.com/*",
-        "*://instagram.com/*",
-        "*://*.reddit.com/*",
-        "*://reddit.com/*"
+        "*://instagram.com/*"
       ],
-      "js": ["content.js"],
+      "js": ["instagram_main.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://*.instagram.com/*",
+        "*://instagram.com/*"
+      ],
+      "js": ["instagram_content.js"],
       "run_at": "document_start"
     },
     {
@@ -22,6 +51,14 @@
       "js": ["reddit_main.js"],
       "run_at": "document_start",
       "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://*.reddit.com/*",
+        "*://reddit.com/*"
+      ],
+      "js": ["reddit_content.js"],
+      "run_at": "document_start"
     }
   ]
 }
