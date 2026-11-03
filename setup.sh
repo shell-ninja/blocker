@@ -516,7 +516,7 @@ if [ "$DRY" = 0 ]; then
         [ -f "$tgt" ] || continue
         as_root chattr -i "$tgt" 2>/dev/null || true
         as_root sed -i '/--load-extension=.*blocker/d' "$tgt" 2>/dev/null || true
-        as_root chattr +i "$tgt" 2>/dev/null || true
+        # Keep flags file writable by user since extension is managed by enterprise policy
       done
     done
     status_ok "Removed legacy --load-extension (force-installed by browser enterprise policy)"
